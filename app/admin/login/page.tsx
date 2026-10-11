@@ -22,7 +22,7 @@ export default async function LoginPage() {
           {n.n === 0 ? "Create the first administrator account. You can add more later from the command line." : "Manage projects, groups and live sessions."}
         </p>
         <div className="mt-7">
-          <LoginForm setup={n.n === 0} />
+          <LoginForm setup={n.n === 0} needsCode={n.n === 0 && !!process.env.SETUP_CODE} />
         </div>
       </div>
     </main>

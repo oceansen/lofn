@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/client/api";
 import { Button, Field, Input } from "@/components/ui";
 
-export function LoginForm({ setup }: { setup: boolean }) {
+export function LoginForm({ setup, needsCode }: { setup: boolean; needsCode?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [setupCode, setSetupCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   async function submit(e: React.FormEvent) {
@@ -16,7 +17,7 @@ export function LoginForm({ setup }: { setup: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      await api(setup ? "/api/admin/setup" : "/api/admin/login", { body: setup ? { email, password, name } : { email, password } });
+      await api(setup ? "/api/admin/setup" : "/api/admin/login", { body: setup ? { email, password, name, setupCode } : { email, password } });
       router.replace("/admin");
       router.refresh();
     } catch (err: any) {
@@ -26,6 +27,11 @@ export function LoginForm({ setup }: { setup: boolean }) {
   }
   return (
     <form onSubmit={submit} className="space-y-4">
+      {needsCode && (
+        <Field label="Setup code" htmlFor="setupCode" hint="Set as SETUP_CODE on the server, so nobody else can claim this installation.">
+          <Input id="setupCode" value={setupCode} onChange={(e) => setSetupCode(e.target.value)} autoComplete="off" required />
+        </Field>
+      )}
       {setup && (
         <Field label="Your name" htmlFor="name">
           <Input id="name" value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
