@@ -124,6 +124,20 @@ To deploy it:
 
 To scale out, switch to `STORAGE_DRIVER=s3`. You can then split the worker into a separate Background Worker service (`npm run worker`).
 
+### Hugging Face Spaces
+
+The image also runs as a Docker Space. On a Space it listens on port 7860 and, because `DATABASE_URL` is unset, starts an embedded PostgreSQL inside the container.
+
+- **Data location.** Data lives in `/data` when the Space has *persistent storage*. Without persistent storage it is wiped whenever the Space restarts or rebuilds.
+- **Keeping data on the free tier.** Point `DATABASE_URL` at an external Postgres instead, for example Neon or Supabase. Media is still ephemeral unless you also set `STORAGE_DRIVER=s3`.
+- **Embedded view.** Cookies use `SameSite=None; Secure` so the app works inside the huggingface.co iframe.
+
+To deploy:
+
+1. Create a Space with the Docker SDK and a blank template.
+2. Add AI keys as Space secrets.
+3. Push this repo to the Space. `.github/workflows/hf-space.yml` does this on every push to `main` once you add the GitHub secret `HF_TOKEN` and the variable `HF_SPACE` (`user/space`).
+
 ## Tests
 
 - `npm test` runs the unit tests: answer normalisation, citation validation, access codes and hashing.

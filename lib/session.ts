@@ -11,11 +11,14 @@ const PARTICIPANT_TTL_DAYS = 30;
 
 export type Admin = { id: string; email: string; name: string };
 
+// Hugging Face shows Spaces inside an iframe on huggingface.co, which needs third-party cookies.
+const embedded = !!process.env.SPACE_ID;
+
 function cookieOpts(days: number) {
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: config.isProd && config.appUrl.startsWith("https"),
+    sameSite: (embedded ? "none" : "lax") as "none" | "lax",
+    secure: embedded || (config.isProd && config.appUrl.startsWith("https")),
     path: "/",
     maxAge: days * 24 * 3600,
   };

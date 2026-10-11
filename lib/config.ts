@@ -25,7 +25,7 @@ function resolveTranscription(): "openai" | "none" {
 
 export const config = {
   databaseUrl: process.env.DATABASE_URL || "postgres://lofn:lofn@localhost:5432/lofn",
-  appUrl: (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || "http://localhost:3000").replace(/\/$/, ""),
+  appUrl: (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || (process.env.SPACE_HOST ? `https://${process.env.SPACE_HOST}` : "") || "http://localhost:3000").replace(/\/$/, ""),
   isProd: process.env.NODE_ENV === "production",
 
   ai: {
