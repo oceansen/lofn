@@ -128,7 +128,13 @@ export async function answerVersions(answerId: string) {
 }
 
 export async function questionsFor(projectId: string) {
-  return query(`SELECT id, title, instructions, position FROM questions WHERE project_id=$1 ORDER BY position, created_at`, [projectId]);
+  return query(
+    `SELECT q.id, q.title, q.instructions, q.position,
+            CASE WHEN qi.question_id IS NULL THEN NULL ELSE extract(epoch from qi.updated_at)::bigint END AS image_version, qi.alt AS image_alt
+       FROM questions q LEFT JOIN question_images qi ON qi.question_id = q.id
+      WHERE q.project_id=$1 ORDER BY q.position, q.created_at`,
+    [projectId],
+  );
 }
 
 export async function cyclesFor(projectId: string) {

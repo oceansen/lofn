@@ -15,7 +15,7 @@ type Workspace = {
   me: { id: string; alias: string; display_name: string };
   cycle: (CycleLike & { note: string; finalStatus: string }) | null;
   cycles: { id: string; name: string; status: string }[];
-  questions: { id: string; title: string; instructions: string }[];
+  questions: { id: string; title: string; instructions: string; image_version: number | null; image_alt: string | null }[];
   answers: AnswerView[];
   contributions: ContributionView[];
   citedEarlier: ContributionView[];
@@ -33,6 +33,7 @@ export function ParticipantWorkspace() {
   const [pane, setPane] = useState<"contribute" | "answer">("contribute");
   const [flashRef, setFlashRef] = useState<number | null>(null);
   const [earlier, setEarlier] = useState<ContributionView | null>(null);
+  const [zoom, setZoom] = useState(false);
   const [seen, setSeen] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -185,7 +186,20 @@ export function ParticipantWorkspace() {
                 <h1 id="q-title" className="mt-1 max-w-[38ch] font-display text-[27px] leading-[1.15] font-bold sm:text-[34px]">
                   {q.title}
                 </h1>
-                {q.instructions && <p className="mt-2 max-w-[65ch] text-[16.5px] text-muted whitespace-pre-wrap">{q.instructions}</p>}
+                <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-start">
+                  {q.image_version && (
+                    <button onClick={() => setZoom(true)} className="group shrink-0 md:w-[44%]" aria-label="Enlarge the reference image">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/questions/${q.id}/image?v=${q.image_version}`}
+                        alt={q.image_alt || "Reference image for this question"}
+                        className="w-full rounded-[var(--radius-md)] border border-line bg-surface shadow-[0_1px_0_rgb(21_32_30/0.05)] group-hover:border-ink"
+                      />
+                      <span className="mt-1 block text-left text-[13px] text-muted">Tap to enlarge</span>
+                    </button>
+                  )}
+                  {q.instructions && <Instructions text={q.instructions} />}
+                </div>
 
                 <div className="mt-5 grid grid-cols-2 rounded-[var(--radius-md)] border border-line bg-surface p-1 lg:hidden" role="tablist">
                   {(["contribute", "answer"] as const).map((p) => (
@@ -265,9 +279,31 @@ export function ParticipantWorkspace() {
         </Button>
       </footer>
 
+      <Modal open={zoom && !!q?.image_version} onClose={() => setZoom(false)} title={q?.title ?? ""} wide>
+        {q?.image_version && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={`/api/questions/${q.id}/image?v=${q.image_version}`} alt={q.image_alt || "Reference image"} className="w-full" />
+        )}
+      </Modal>
       <Modal open={!!earlier} onClose={() => setEarlier(null)} title={earlier ? `C${earlier.ref} from an earlier round` : ""}>
         {earlier && <ContributionCard c={earlier} />}
       </Modal>
+    </div>
+  );
+}
+
+/** Long instructions collapse so the contribution tools stay near the top. */
+function Instructions({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 420;
+  return (
+    <div className="min-w-0 flex-1">
+      <p className={cx("max-w-[65ch] text-[16px] whitespace-pre-wrap text-muted", long && !open && "line-clamp-6")}>{text}</p>
+      {long && (
+        <button onClick={() => setOpen(!open)} className="mt-1 text-sm font-semibold text-spruce hover:underline">
+          {open ? "Show less" : "Show full guidance"}
+        </button>
+      )}
     </div>
   );
 }

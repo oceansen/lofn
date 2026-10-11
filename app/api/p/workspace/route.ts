@@ -14,7 +14,11 @@ export const GET = route(async (req) => {
   if (requested && isUuid(requested)) cycle = await one(`SELECT * FROM cycles WHERE id=$1 AND project_id=$2 AND status <> 'draft'`, [requested, ctx.project.id]);
   if (!cycle) cycle = await currentCycleForProject(ctx.project.id);
   const questions = await query(
-    `SELECT q.id, q.title, q.instructions FROM questions q JOIN group_questions gq ON gq.question_id=q.id AND gq.group_id=$1 ORDER BY q.position, q.created_at`,
+    `SELECT q.id, q.title, q.instructions,
+            CASE WHEN qi.question_id IS NULL THEN NULL ELSE extract(epoch from qi.updated_at)::bigint END AS image_version, qi.alt AS image_alt
+       FROM questions q JOIN group_questions gq ON gq.question_id=q.id AND gq.group_id=$1
+       LEFT JOIN question_images qi ON qi.question_id=q.id
+      ORDER BY q.position, q.created_at`,
     [ctx.group.id],
   );
   const past = await query(`SELECT id, name, status FROM cycles WHERE project_id=$1 AND status <> 'draft' ORDER BY COALESCE(started_at, created_at)`, [ctx.project.id]);

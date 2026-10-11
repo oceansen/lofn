@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, fetcher, HttpError } from "@/lib/client/api";
 import { Button, Empty, Field, Modal, Spinner, Textarea } from "@/components/ui";
 
-type Q = { id: string; title: string; instructions: string; position: number };
+type Q = { id: string; title: string; instructions: string; position: number; image_version: number | null; image_alt: string | null };
 
 export default function QuestionsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -72,7 +72,8 @@ export default function QuestionsPage({ params }: { params: Promise<{ id: string
                 <span className="font-display text-xl font-bold text-faint tabular">{i + 1}</span>
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">{q.title}</p>
-                  {q.instructions && <p className="mt-0.5 text-[14.5px] whitespace-pre-wrap text-muted">{q.instructions}</p>}
+                  {q.instructions && <p className="mt-0.5 line-clamp-4 text-[14.5px] whitespace-pre-wrap text-muted">{q.instructions}</p>}
+                  <QuestionImage q={q} onChange={() => mutate()} />
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row sm:items-start">
                   <Button size="sm" variant="ghost" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move question ${i + 1} up`}>
@@ -181,3 +182,42 @@ function EditForm({ q, onSaved }: { q: Q; onSaved: () => void }) {
   );
 }
 
+
+function QuestionImage({ q, onChange }: { q: Q; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function upload(f: File) {
+    setBusy(true);
+    setErr(null);
+    const res = await fetch(`/api/admin/questions/${q.id}/image?alt=${encodeURIComponent(f.name.replace(/\.[^.]+$/, ""))}`, { method: "POST", body: f });
+    if (!res.ok) setErr((await res.json().catch(() => ({}))).error || "Upload failed.");
+    setBusy(false);
+    onChange();
+  }
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-3">
+      {q.image_version && (
+        <a href={`/api/questions/${q.id}/image?v=${q.image_version}`} target="_blank" rel="noreferrer">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={`/api/questions/${q.id}/image?v=${q.image_version}`} alt={q.image_alt || "Reference image"} className="h-20 rounded border border-line" />
+        </a>
+      )}
+      <label className="cursor-pointer text-sm font-semibold text-spruce hover:underline">
+        {busy ? "Uploading…" : q.image_version ? "Replace image" : "Add reference image"}
+        <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+      </label>
+      {q.image_version && (
+        <button
+          className="text-sm font-semibold text-muted hover:text-alarm"
+          onClick={async () => {
+            await api(`/api/admin/questions/${q.id}/image`, { method: "DELETE" });
+            onChange();
+          }}
+        >
+          Remove
+        </button>
+      )}
+      {err && <span className="text-sm text-alarm">{err}</span>}
+    </div>
+  );
+}
