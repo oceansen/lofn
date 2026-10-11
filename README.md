@@ -29,7 +29,25 @@ Several design properties hold throughout:
   - Every version is kept with its change list, and the UI shows a word-level diff.
 - **Originals are immutable.** Transcripts and descriptions are stored separately (`derivations`). Moderation hides a contribution and removes it from the answer, but never edits it.
 
-## Run locally
+## Quick local test (one command)
+
+You only need Node.js 20.9 or later; no Docker or PostgreSQL install is required.
+
+```bash
+npm install
+npm run local
+```
+
+`npm run local` runs four steps:
+
+1. Starts a private PostgreSQL from npm.
+2. Builds the app on the first run.
+3. Starts the app and worker on http://localhost:3000.
+4. Opens `/admin`, where you create your administrator account.
+
+Data is kept in `.lofn-local/` between runs; delete that folder to start fresh. Put `HF_TOKEN` (or another provider's key) in a `.env` file to use real AI models.
+
+## Run locally (development)
 
 Requires Node 20.9+, PostgreSQL 14+ and `ffmpeg`. `ffmpeg` is needed for video analysis and long-audio normalisation.
 
