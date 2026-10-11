@@ -7,20 +7,28 @@ function int(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export type AiProviderName = "anthropic" | "openai" | "none";
+export type AiProviderName = "anthropic" | "openai" | "huggingface" | "none";
+export type AsrProviderName = "openai" | "huggingface" | "none";
+
+const HF_TOKEN = () => process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY || "";
 
 function resolveProvider(): AiProviderName {
   const explicit = (process.env.AI_PROVIDER || "").toLowerCase();
-  if (explicit === "anthropic" || explicit === "openai" || explicit === "none") return explicit;
+  if (explicit === "hf") return "huggingface";
+  if (explicit === "anthropic" || explicit === "openai" || explicit === "huggingface" || explicit === "none") return explicit;
   if (process.env.ANTHROPIC_API_KEY) return "anthropic";
   if (process.env.OPENAI_API_KEY) return "openai";
+  if (HF_TOKEN()) return "huggingface";
   return "none";
 }
 
-function resolveTranscription(): "openai" | "none" {
+function resolveTranscription(): AsrProviderName {
   const explicit = (process.env.TRANSCRIPTION_PROVIDER || "").toLowerCase();
-  if (explicit === "openai" || explicit === "none") return explicit;
-  return process.env.OPENAI_API_KEY ? "openai" : "none";
+  if (explicit === "hf") return "huggingface";
+  if (explicit === "openai" || explicit === "huggingface" || explicit === "none") return explicit;
+  if (process.env.OPENAI_API_KEY) return "openai";
+  if (HF_TOKEN()) return "huggingface";
+  return "none";
 }
 
 export const config = {
@@ -38,6 +46,12 @@ export const config = {
     openaiBaseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
     openaiModel: process.env.OPENAI_MODEL || "gpt-4o",
     openaiTranscriptionModel: process.env.OPENAI_TRANSCRIPTION_MODEL || "whisper-1",
+    hfToken: HF_TOKEN(),
+    hfBaseUrl: (process.env.HF_BASE_URL || "https://router.huggingface.co/v1").replace(/\/$/, ""),
+    hfInferenceUrl: (process.env.HF_INFERENCE_URL || "https://router.huggingface.co/hf-inference/models").replace(/\/$/, ""),
+    hfModel: process.env.HF_MODEL || "Qwen/Qwen3.8-27B",
+    hfVisionModel: process.env.HF_VISION_MODEL || process.env.HF_MODEL || "Qwen/Qwen3.8-27B",
+    hfAsrModel: process.env.HF_ASR_MODEL || "openai/whisper-large-v3-turbo",
     timeoutMs: int("AI_TIMEOUT_MS", 120_000),
     maxOutputTokens: int("AI_MAX_OUTPUT_TOKENS", 4096),
   },
@@ -76,16 +90,3 @@ export const config = {
     pollMs: int("WORKER_POLL_MS", 1000),
   },
 };
-
-export function aiStatus() {
-  return {
-    synthesisProvider: config.ai.provider,
-    synthesisModel:
-      config.ai.provider === "anthropic" ? config.ai.anthropicModel : config.ai.provider === "openai" ? config.ai.openaiModel : null,
-    visionProvider: config.ai.provider,
-    transcriptionProvider: config.ai.transcription,
-    transcriptionModel: config.ai.transcription === "openai" ? config.ai.openaiTranscriptionModel : null,
-    isFallback: config.ai.provider === "none",
-    transcriptionFallback: config.ai.transcription === "none",
-  };
-}

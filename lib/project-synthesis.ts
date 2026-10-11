@@ -1,6 +1,6 @@
 import { one, query } from "./db";
 import { publish } from "./events";
-import { chatProvider, parseJsonLoose } from "./ai/provider";
+import { chatFor, parseJsonLoose } from "./ai/provider";
 import { contentToMarkdown } from "./answer-content";
 
 export type GroupRefItem = { text: string; groups: number[] };
@@ -61,7 +61,7 @@ export async function runProjectSynthesis(synthesisId: string) {
         ORDER BY a.group_id, a.question_id, COALESCE(c.started_at, c.created_at) DESC`,
       [s.project_id, s.cycle_id],
     );
-    const ai = chatProvider();
+    const ai = await chatFor("synthesis");
     const out: ProjectSynthesisContent = { overview: "", questions: [] };
     for (const q of questions) {
       const answers = latest.filter((r) => r.question_id === q.id).sort((x, y) => x.group_name.localeCompare(y.group_name));

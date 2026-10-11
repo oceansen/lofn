@@ -4,7 +4,8 @@
  * so instances can be added or restarted at any time without double-processing.
  */
 import os from "node:os";
-import { config, aiStatus } from "../lib/config";
+import { config } from "../lib/config";
+import { aiStatus } from "../lib/ai/settings";
 import { pool, query, one } from "../lib/db";
 import { claim, complete, enqueue, fail, reapStale, reschedule, type Job } from "../lib/jobs";
 import { expireDueCycles, rearmPendingFinals } from "../lib/cycles";
@@ -137,10 +138,11 @@ async function clock() {
 
 async function main() {
   if (process.env.AUTO_MIGRATE !== "false") await migrate();
-  const ai = aiStatus();
+  const ai = await aiStatus();
   console.log(`[worker] ${workerId} starting with ${config.worker.concurrency} slots`);
   console.log(
     `[worker] AI synthesis: ${ai.isFallback ? "DEVELOPMENT FALLBACK (no provider configured)" : `${ai.synthesisProvider} / ${ai.synthesisModel}`}; ` +
+      `vision: ${ai.visionFallback ? "off" : `${ai.visionProvider} / ${ai.visionModel}`}; ` +
       `transcription: ${ai.transcriptionFallback ? "not configured" : `${ai.transcriptionProvider} / ${ai.transcriptionModel}`}; ffmpeg: ${(await hasFfmpeg()) ? "yes" : "NO (video analysis disabled)"}`,
   );
   const tasks = [clock(), ...Array.from({ length: config.worker.concurrency }, (_, i) => runner(i))];

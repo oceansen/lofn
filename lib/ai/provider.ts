@@ -1,11 +1,12 @@
 import { config } from "../config";
+import { getAiSettings, isLive } from "./settings";
 
 export type Part = { type: "text"; text: string } | { type: "image"; mime: string; base64: string };
 
 export type CompleteArgs = { system: string; parts: Part[]; json?: boolean; maxTokens?: number; temperature?: number };
 
 export interface ChatProvider {
-  name: "anthropic" | "openai";
+  name: "anthropic" | "openai" | "huggingface";
   model: string;
   complete(args: CompleteArgs): Promise<string>;
 }
@@ -44,7 +45,7 @@ async function postJson(url: string, headers: Record<string, string>, payload: u
 
 class AnthropicProvider implements ChatProvider {
   name = "anthropic" as const;
-  model = config.ai.anthropicModel;
+  constructor(public model: string) {}
   async complete({ system, parts, maxTokens, temperature }: CompleteArgs) {
     const content = parts.map((p) =>
       p.type === "text"
@@ -68,46 +69,70 @@ class AnthropicProvider implements ChatProvider {
   }
 }
 
-class OpenAIProvider implements ChatProvider {
-  name = "openai" as const;
-  model = config.ai.openaiModel;
+/** OpenAI Chat Completions, also used for any OpenAI-compatible endpoint (incl. the Hugging Face router). */
+class OpenAICompatibleProvider implements ChatProvider {
+  constructor(
+    public name: "openai" | "huggingface",
+    public model: string,
+    private baseUrl: string,
+    private key: string,
+    private tokensParam: string,
+    private jsonMode: boolean,
+  ) {}
   async complete({ system, parts, json, maxTokens, temperature }: CompleteArgs) {
     const content = parts.map((p) =>
       p.type === "text" ? { type: "text", text: p.text } : { type: "image_url", image_url: { url: `data:${p.mime};base64,${p.base64}` } },
     );
-    const tokensParam = process.env.OPENAI_TOKENS_PARAM || "max_completion_tokens";
-    const data = await postJson(
-      `${config.ai.openaiBaseUrl}/chat/completions`,
-      { authorization: `Bearer ${config.ai.openaiKey}` },
-      {
-        model: this.model,
-        [tokensParam]: maxTokens ?? config.ai.maxOutputTokens,
-        ...(temperature !== undefined ? { temperature } : {}),
-        ...(json ? { response_format: { type: "json_object" } } : {}),
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content },
-        ],
-      },
-    );
-    const out = data.choices?.[0]?.message?.content;
-    if (!out) throw new AiError("AI provider returned an empty response.", true);
-    return out;
+    const body = (withJson: boolean) => ({
+      model: this.model,
+      [this.tokensParam]: maxTokens ?? config.ai.maxOutputTokens,
+      ...(temperature !== undefined ? { temperature } : {}),
+      ...(json && withJson ? { response_format: { type: "json_object" } } : {}),
+      messages: [
+        { role: "system", content: system },
+        // Text-only requests use a plain string: some open models reject content arrays without images.
+        { role: "user", content: parts.every((p) => p.type === "text") ? parts.map((p) => (p as any).text).join("\n\n") : content },
+      ],
+    });
+    let data: any;
+    try {
+      data = await postJson(`${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.key}` }, body(this.jsonMode));
+    } catch (e) {
+      // Not every hosted model supports JSON mode; the prompt already demands JSON, so retry without it.
+      if (json && this.jsonMode && e instanceof AiError && !e.retryable && /response_format|json/i.test(e.message)) {
+        data = await postJson(`${this.baseUrl}/chat/completions`, { authorization: `Bearer ${this.key}` }, body(false));
+      } else throw e;
+    }
+    const msg = data.choices?.[0]?.message;
+    const out = typeof msg?.content === "string" ? msg.content : Array.isArray(msg?.content) ? msg.content.map((c: any) => c.text ?? "").join("") : "";
+    if (!out.trim()) throw new AiError("AI provider returned an empty response.", true);
+    return stripReasoning(out);
   }
 }
 
-let cached: ChatProvider | null | undefined;
-/** Returns null when no AI provider is configured (development fallback mode). */
-export function chatProvider(): ChatProvider | null {
-  if (cached !== undefined) return cached;
-  if (config.ai.provider === "anthropic" && config.ai.anthropicKey) cached = new AnthropicProvider();
-  else if (config.ai.provider === "openai" && config.ai.openaiKey) cached = new OpenAIProvider();
-  else cached = null;
-  return cached;
+/** Reasoning models (Qwen3, DeepSeek-R1 …) may prefix answers with <think> blocks. */
+export function stripReasoning(text: string) {
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\S]*?<\/think>/i, "").trim();
+}
+
+export function makeChat(provider: string, model: string): ChatProvider | null {
+  if (!model) return null;
+  if (provider === "anthropic" && config.ai.anthropicKey) return new AnthropicProvider(model);
+  if (provider === "openai" && config.ai.openaiKey)
+    return new OpenAICompatibleProvider("openai", model, config.ai.openaiBaseUrl, config.ai.openaiKey, process.env.OPENAI_TOKENS_PARAM || "max_completion_tokens", true);
+  if (provider === "huggingface" && config.ai.hfToken)
+    return new OpenAICompatibleProvider("huggingface", model, config.ai.hfBaseUrl, config.ai.hfToken, "max_tokens", process.env.HF_JSON_MODE !== "false");
+  return null;
+}
+
+/** Provider for a task, per the current settings. Returns null in development-fallback mode. */
+export async function chatFor(task: "synthesis" | "vision"): Promise<ChatProvider | null> {
+  const s = (await getAiSettings())[task];
+  return makeChat(s.provider, s.model);
 }
 
 export function parseJsonLoose<T = any>(text: string): T {
-  let t = text.trim();
+  let t = stripReasoning(text);
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) t = fence[1].trim();
   const start = t.indexOf("{");
@@ -122,30 +147,20 @@ export function parseJsonLoose<T = any>(text: string): T {
 
 // ---------- transcription ----------
 
-export function transcriptionAvailable() {
-  return config.ai.transcription === "openai" && !!config.ai.openaiKey;
+export async function transcriptionSetting() {
+  const s = (await getAiSettings()).transcription;
+  return isLive(s) ? s : null;
 }
 
-export async function transcribe(audio: Buffer, filename: string, mime: string): Promise<{ text: string; model: string }> {
-  if (!transcriptionAvailable()) throw new AiError("No transcription provider configured.", false);
+export async function transcriptionAvailable() {
+  return !!(await transcriptionSetting());
+}
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), filename);
-    form.append("model", config.ai.openaiTranscriptionModel);
-    form.append("response_format", "json");
     try {
-      const res = await fetch(`${config.ai.openaiBaseUrl}/audio/transcriptions`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${config.ai.openaiKey}` },
-        body: form,
-        signal: AbortSignal.timeout(Math.max(config.ai.timeoutMs, 300_000)),
-      });
-      const text = await res.text();
-      if (res.ok) return { text: (JSON.parse(text).text || "").trim(), model: config.ai.openaiTranscriptionModel };
-      const retryable = res.status === 429 || res.status >= 500;
-      lastErr = new AiError(`Transcription failed (${res.status}): ${text.slice(0, 300)}`, retryable);
-      if (!retryable) throw lastErr;
+      return await fn();
     } catch (e) {
       if (e instanceof AiError && !e.retryable) throw e;
       lastErr = e;
@@ -153,4 +168,45 @@ export async function transcribe(audio: Buffer, filename: string, mime: string):
     await new Promise((r) => setTimeout(r, 2000 * 2 ** attempt));
   }
   throw lastErr;
+}
+
+export async function transcribe(audio: Buffer, filename: string, mime: string): Promise<{ text: string; model: string; provider: string }> {
+  const s = await transcriptionSetting();
+  if (!s) throw new AiError("No transcription provider configured.", false);
+  const timeout = AbortSignal.timeout(Math.max(config.ai.timeoutMs, 300_000));
+
+  if (s.provider === "huggingface") {
+    // Hugging Face Inference (automatic-speech-recognition): raw audio bytes in, {text} out.
+    return withRetry(async () => {
+      const res = await fetch(`${config.ai.hfInferenceUrl}/${s.model.split(":")[0]}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": mime },
+        body: new Uint8Array(audio),
+        signal: timeout,
+      });
+      const text = await res.text();
+      if (res.ok) {
+        const j = JSON.parse(text);
+        return { text: String(j.text ?? j[0]?.text ?? "").trim(), model: s.model, provider: "huggingface" };
+      }
+      // 503 = model loading on HF Inference; worth retrying.
+      throw new AiError(`Transcription failed (${res.status}): ${text.slice(0, 300)}`, res.status === 429 || res.status >= 500);
+    });
+  }
+
+  return withRetry(async () => {
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), filename);
+    form.append("model", s.model);
+    form.append("response_format", "json");
+    const res = await fetch(`${config.ai.openaiBaseUrl}/audio/transcriptions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${config.ai.openaiKey}` },
+      body: form,
+      signal: timeout,
+    });
+    const text = await res.text();
+    if (res.ok) return { text: (JSON.parse(text).text || "").trim(), model: s.model, provider: "openai" };
+    throw new AiError(`Transcription failed (${res.status}): ${text.slice(0, 300)}`, res.status === 429 || res.status >= 500);
+  });
 }

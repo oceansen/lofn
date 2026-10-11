@@ -50,27 +50,19 @@ With Docker (Postgres, app and worker): `cp .env.example .env && docker compose 
 
 ## AI providers
 
-All AI calls happen server-side in the worker. Keys are never sent to the browser.
+All AI calls happen server-side in the worker; keys never reach the browser. Each of the three jobs (answer synthesis, image/video interpretation, transcription) can use a different provider and model. Pick them in the app under **Admin → AI models**. That page searches Hugging Face for models that Inference Providers currently serve, and has a **Test** button for each job. The environment variables below set the defaults.
 
-| Variable | Purpose |
-|---|---|
-| `ANTHROPIC_API_KEY` (+ `ANTHROPIC_MODEL`, default `claude-sonnet-5-5`) | Synthesis and image/video interpretation with Claude |
-| `OPENAI_API_KEY` (+ `OPENAI_MODEL`, default `gpt-4o`) | Synthesis and vision with OpenAI |
-| `OPENAI_BASE_URL` | Any OpenAI-compatible endpoint (Azure OpenAI, vLLM, Ollama, LiteLLM …) |
-| `OPENAI_TRANSCRIPTION_MODEL` (default `whisper-1`) | Audio and video transcription via `/audio/transcriptions` |
-| `AI_PROVIDER` / `TRANSCRIPTION_PROVIDER` | Force `anthropic`/`openai`/`none`. When unset, they are chosen from whichever keys are present. |
+| Provider | Key | Models |
+|---|---|---|
+| **Hugging Face** Inference Providers | `HF_TOKEN` (fine-grained, "Make calls to Inference Providers") | Any chat or vision-language model served by the router, e.g. `Qwen/Qwen3.8-27B` (default), `zai-org/GLM-5.3`, `google/gemma-4-31B-it`. Append `:provider` (e.g. `:together`) to pin a provider. Speech uses HF Inference Whisper (`openai/whisper-large-v3-turbo`). |
+| Anthropic | `ANTHROPIC_API_KEY` | `ANTHROPIC_MODEL` (default `claude-sonnet-5-5`) |
+| OpenAI or any OpenAI-compatible endpoint | `OPENAI_API_KEY`, `OPENAI_BASE_URL` | `OPENAI_MODEL` (default `gpt-4o`), `OPENAI_TRANSCRIPTION_MODEL` (default `whisper-1`) |
 
-A common setup is Claude for synthesis and vision plus OpenAI for transcription: set both keys and `AI_PROVIDER=anthropic`.
+Defaults are auto-detected from whichever keys are present, or forced with `AI_PROVIDER` / `TRANSCRIPTION_PROVIDER`. Reasoning models' `<think>` blocks are stripped automatically. If a hosted model rejects JSON mode, Lofn retries without it, because the prompt already demands JSON.
 
-**Without any key**, Lofn runs in a *development fallback* mode, and it is labelled as such everywhere:
+**Without any key**, Lofn runs in a *development fallback* mode, and it is labelled as such everywhere. Answers list the contributions verbatim under a "Development fallback — not an AI synthesis" banner, media is marked "not interpreted", and admins see a warning. Simulated output is never presented as synthesis.
 
-- Answers list the contributions verbatim under a "Development fallback — not an AI synthesis" banner.
-- Media is marked "not interpreted".
-- Admins see a warning on the dashboard.
-
-Simulated output is never presented as synthesis.
-
-Tuning options: `SYNTHESIS_INTERVAL_SECONDS` (default 60) and `FINAL_SYNTHESIS_WAIT_SECONDS`. The second sets how long the final pass waits for media still being processed (default 180). You can also set guidance for the synthesis per project in **Settings**.
+Tuning options: `SYNTHESIS_INTERVAL_SECONDS` (default 60) and `FINAL_SYNTHESIS_WAIT_SECONDS`, which sets how long the final pass waits for media still being processed (default 180). You can also set guidance for the synthesis per project in **Settings**.
 
 ## Media
 
@@ -135,7 +127,7 @@ The image also runs as a Docker Space. On a Space it listens on port 7860 and, b
 To deploy:
 
 1. Create a Space with the Docker SDK and a blank template.
-2. Add AI keys as Space secrets.
+2. Add `HF_TOKEN` as a Space secret (Settings → Variables and secrets) to use Hugging Face models, or another provider's key.
 3. Push this repo to the Space. `.github/workflows/hf-space.yml` does this on every push to `main` once you add the GitHub secret `HF_TOKEN` and the variable `HF_SPACE` (`user/space`).
 
 ## Tests

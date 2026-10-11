@@ -44,12 +44,12 @@ export function Dashboard() {
       {sys?.ai?.isFallback && (
         <Notice tone="tide" className="mt-6">
           <strong>AI synthesis is not configured.</strong> Answers will be clearly labelled development fallbacks that list contributions verbatim. Set{" "}
-          <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code> for the app and the worker, then restart both.
+          <code>HF_TOKEN</code>, <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code>, then choose models under <a className="font-semibold underline" href="/admin/ai">AI models</a>.
         </Notice>
       )}
       {sys && !sys.ai.isFallback && sys.ai.transcriptionFallback && (
         <Notice className="mt-6 text-[14.5px]">
-          Audio and video transcription needs <code>OPENAI_API_KEY</code> (or an OpenAI-compatible endpoint). Images are interpreted; recordings are stored but not transcribed.
+          Transcription is off, so recordings are stored but not transcribed. Turn it on under <a className="font-semibold underline" href="/admin/ai">AI models</a> (Hugging Face Whisper or OpenAI).
         </Notice>
       )}
 

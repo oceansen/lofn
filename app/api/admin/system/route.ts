@@ -1,4 +1,5 @@
-import { aiStatus, config } from "@/lib/config";
+import { config } from "@/lib/config";
+import { aiStatus } from "@/lib/ai/settings";
 import { json, route } from "@/lib/http";
 import { requireAdmin } from "@/lib/session";
 import { one } from "@/lib/db";
@@ -12,5 +13,5 @@ export const GET = route(async () => {
             max(updated_at) FILTER (WHERE status='done') AS last_done
        FROM jobs`,
   );
-  return json({ ai: aiStatus(), storage: config.storage.driver, synthesisIntervalSeconds: config.synthesis.intervalMs / 1000, queue: q });
+  return json({ ai: await aiStatus(), storage: config.storage.driver, synthesisIntervalSeconds: config.synthesis.intervalMs / 1000, queue: q });
 });

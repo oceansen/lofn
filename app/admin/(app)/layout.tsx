@@ -20,6 +20,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin" className="rounded-md px-2.5 py-1.5 font-semibold hover:bg-ink/5">
               Projects
             </Link>
+            <Link href="/admin/ai" className="rounded-md px-2.5 py-1.5 font-semibold hover:bg-ink/5">
+              AI models
+            </Link>
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm text-muted">
             <span className="hidden sm:inline">{admin.name || admin.email}</span>

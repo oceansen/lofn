@@ -1,6 +1,6 @@
 import { query, one } from "./db";
 import { cycleView, expireDueCycles, type CycleRow } from "./cycles";
-import { aiStatus } from "./config";
+import { aiStatus } from "./ai/settings";
 
 export type ContributionView = {
   id: string;
@@ -192,7 +192,7 @@ export async function projectOverview(projectId: string, cycleId?: string | null
     answers: answerList,
     timeline,
     processing,
-    ai: aiStatus(),
+    ai: await aiStatus(),
     serverNow: Date.now(),
   };
 }
