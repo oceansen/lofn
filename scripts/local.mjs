@@ -43,9 +43,22 @@ async function optionalPath(mod, pick) {
     return null;
   }
 }
-if (!env.FFMPEG_PATH && !hasCmd("ffmpeg")) env.FFMPEG_PATH = (await optionalPath("ffmpeg-static", (p) => p)) ?? undefined;
-if (!env.FFPROBE_PATH && !hasCmd("ffprobe")) env.FFPROBE_PATH = (await optionalPath("ffprobe-static", (p) => p.path)) ?? undefined;
-for (const k of ["FFMPEG_PATH", "FFPROBE_PATH"]) if (!env[k]) delete env[k];
+// Prefer a system ffmpeg; otherwise use the copies bundled via npm (made executable, then verified).
+async function bundled(cmd, mod, pick) {
+  if (hasCmd(cmd)) return null;
+  const p = await optionalPath(mod, pick);
+  if (!p || !fs.existsSync(p)) return null;
+  try {
+    fs.chmodSync(p, 0o755);
+  } catch {}
+  return hasCmd(p) ? p : null;
+}
+const ff = await bundled("ffmpeg", "ffmpeg-static", (p) => p);
+const fp = await bundled("ffprobe", "ffprobe-static", (p) => p.path);
+if (ff) env.FFMPEG_PATH = ff;
+if (fp) env.FFPROBE_PATH = fp;
+if (!ff && !hasCmd("ffmpeg"))
+  console.warn("  ! ffmpeg isn't available: video analysis is off and some recordings can't be converted.\n    Fix: brew install ffmpeg   (or re-run npm install)\n");
 
 function portFree(port) {
   return new Promise((resolve) => {

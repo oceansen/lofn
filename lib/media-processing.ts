@@ -43,22 +43,23 @@ function run(cmd: string, args: string[], timeoutMs = 600_000): Promise<{ stdout
 }
 
 let ffmpegOk: boolean | undefined;
+let ffprobeOk: boolean | undefined;
+/** ffmpeg alone is enough for audio conversion and frame extraction. */
 export async function hasFfmpeg() {
-  if (ffmpegOk === undefined) {
-    try {
-      await run(process.env.FFMPEG_PATH || "ffmpeg", ["-version"], 10_000);
-      await run(process.env.FFPROBE_PATH || "ffprobe", ["-version"], 10_000);
-      ffmpegOk = true;
-    } catch {
-      ffmpegOk = false;
-    }
-  }
+  if (ffmpegOk === undefined) ffmpegOk = await run(process.env.FFMPEG_PATH || "ffmpeg", ["-version"], 10_000).then(() => true, () => false);
   return ffmpegOk;
+}
+/** ffprobe is optional: without it, video duration and stream checks fall back to ffmpeg-only handling. */
+export async function hasFfprobe() {
+  if (ffprobeOk === undefined) ffprobeOk = await run(process.env.FFPROBE_PATH || "ffprobe", ["-version"], 10_000).then(() => true, () => false);
+  return ffprobeOk;
 }
 const FFMPEG = () => process.env.FFMPEG_PATH || "ffmpeg";
 const FFPROBE = () => process.env.FFPROBE_PATH || "ffprobe";
 
 async function probe(file: string): Promise<{ duration: number; hasAudio: boolean; hasVideo: boolean }> {
+  // Without ffprobe, assume both tracks exist; extraction steps tolerate a missing track.
+  if (!(await hasFfprobe())) return { duration: 0, hasAudio: true, hasVideo: true };
   const { stdout } = await run(FFPROBE(), ["-v", "error", "-show_entries", "format=duration:stream=codec_type", "-of", "json", file], 60_000);
   const j = JSON.parse(stdout);
   let duration = Number(j.format?.duration);
@@ -202,10 +203,20 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
         await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: no transcription provider is configured (development mode).", "none", "", true);
       } else if (info.hasAudio) {
         const audio = path.join(dir, "audio.mp3");
-        await run(FFMPEG(), ["-y", "-i", src, "-t", String(limit), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", audio]);
-        const t = await transcribe(await fs.readFile(audio), "audio.mp3", "audio/mpeg");
-        transcript = t.text;
-        await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
+        let extracted = true;
+        try {
+          await run(FFMPEG(), ["-y", "-i", src, "-t", String(limit), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", audio]);
+        } catch (e) {
+          if (await hasFfprobe()) throw e;
+          extracted = false; // no ffprobe to check first: most likely the video simply has no audio track
+        }
+        if (extracted) {
+          const t = await transcribe(await fs.readFile(audio), "audio.mp3", "audio/mpeg");
+          transcript = t.text;
+          await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
+        } else {
+          await saveDerivation(contributionId, m.id, "transcript", "(No audio track could be extracted from the video.)", "system", "", false);
+        }
       } else {
         await saveDerivation(contributionId, m.id, "transcript", "(The video has no audio track.)", "system", "", false);
       }

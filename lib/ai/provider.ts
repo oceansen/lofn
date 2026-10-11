@@ -176,12 +176,14 @@ export async function transcribe(audio: Buffer, filename: string, mime: string):
   const timeout = AbortSignal.timeout(Math.max(config.ai.timeoutMs, 300_000));
 
   if (s.provider === "huggingface") {
-    // Hugging Face Inference (automatic-speech-recognition): raw audio bytes in, {text} out.
+    // Hugging Face Inference (automatic-speech-recognition). Audio goes base64-encoded in a JSON body:
+    // the router rejects many raw audio content types (e.g. browser-recorded video/webm), but always accepts JSON.
+    const payload = JSON.stringify({ inputs: audio.toString("base64") });
     return withRetry(async () => {
       const res = await fetch(`${config.ai.hfInferenceUrl}/${s.model.split(":")[0]}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": mime },
-        body: new Uint8Array(audio),
+        headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": "application/json" },
+        body: payload,
         signal: timeout,
       });
       const text = await res.text();

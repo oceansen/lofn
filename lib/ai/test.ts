@@ -60,8 +60,8 @@ async function transcribeWith(provider: string, model: string) {
   if (provider === "huggingface") {
     const res = await fetch(`${config.ai.hfInferenceUrl}/${model.split(":")[0]}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": "audio/wav" },
-      body: new Uint8Array(audio),
+      headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ inputs: audio.toString("base64") }),
       signal: AbortSignal.timeout(120_000),
     });
     const text = await res.text();
