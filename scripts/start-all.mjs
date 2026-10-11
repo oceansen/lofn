@@ -52,7 +52,7 @@ if (!env.DATABASE_URL) {
   const fresh = !fs.existsSync(path.join(pgDataDir, "PG_VERSION"));
   fs.mkdirSync(pgDataDir, { recursive: true, mode: 0o700 });
   if (isRoot) spawnSync("chown", ["-R", `${PG_USER}:${PG_USER}`, pgDataDir, base], { stdio: "inherit" });
-  if (fresh) sh(pgBin("initdb"), ["-D", pgDataDir, "-U", "lofn", "--auth=trust", "--encoding=UTF8", "-c", "listen_addresses=127.0.0.1"], { asPg: true });
+  if (fresh) sh(pgBin("initdb"), ["-D", pgDataDir, "-U", "lofn", "--auth=trust", "--encoding=UTF8"], { asPg: true });
   fs.rmSync(path.join(pgDataDir, "postmaster.pid"), { force: true }); // stale after an unclean stop
   sh(pgBin("pg_ctl"), ["-D", pgDataDir, "-l", path.join(base, "postgres.log"), "-o", "-k /tmp -p 5432 -c listen_addresses=127.0.0.1", "-w", "start"], { asPg: true });
   if (fresh) sh(pgBin("createdb"), ["-h", "127.0.0.1", "-U", "lofn", "lofn"]);
