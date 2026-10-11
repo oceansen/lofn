@@ -11,7 +11,7 @@ import { claim, complete, enqueue, fail, reapStale, reschedule, type Job } from 
 import { expireDueCycles, rearmPendingFinals } from "../lib/cycles";
 import { publish } from "../lib/events";
 import { answersNeedingSynthesis, synthesizeAnswer } from "../lib/synthesis";
-import { processContribution, hasFfmpeg, hasFfprobe } from "../lib/media-processing";
+import { processContribution, hasFfmpeg, hasFfprobe, ffmpegPaths } from "../lib/media-processing";
 import { runProjectSynthesis } from "../lib/project-synthesis";
 import { purgeProjectMedia, retentionSweep } from "../lib/retention";
 import { storage } from "../lib/storage";
@@ -143,7 +143,7 @@ async function main() {
   console.log(
     `[worker] AI synthesis: ${ai.isFallback ? "DEVELOPMENT FALLBACK (no provider configured)" : `${ai.synthesisProvider} / ${ai.synthesisModel}`}; ` +
       `vision: ${ai.visionFallback ? "off" : `${ai.visionProvider} / ${ai.visionModel}`}; ` +
-      `transcription: ${ai.transcriptionFallback ? "not configured" : `${ai.transcriptionProvider} / ${ai.transcriptionModel}`}; ffmpeg: ${(await hasFfmpeg()) ? "yes" : "NO (video analysis and audio conversion disabled)"}, ffprobe: ${(await hasFfprobe()) ? "yes" : "no"}`,
+      `transcription: ${ai.transcriptionFallback ? "not configured" : `${ai.transcriptionProvider} / ${ai.transcriptionModel}`}; ffmpeg: ${(await hasFfmpeg()) ? ffmpegPaths().ffmpeg : "NO (video frames not analysed; install ffmpeg)"}, ffprobe: ${(await hasFfprobe()) ? ffmpegPaths().ffprobe : "no"}`,
   );
   const tasks = [clock(), ...Array.from({ length: config.worker.concurrency }, (_, i) => runner(i))];
   const shutdown = async () => {

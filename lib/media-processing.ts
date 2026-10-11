@@ -42,20 +42,47 @@ function run(cmd: string, args: string[], timeoutMs = 600_000): Promise<{ stdout
   });
 }
 
+// ffmpeg/ffprobe: an explicit path, else the system binary, else the copy bundled through npm.
+async function bundledPath(mod: string): Promise<string | null> {
+  try {
+    const m: any = await import(mod);
+    const p: string | undefined = (m.default ?? m).path;
+    if (!p) return null;
+    await fs.chmod(p, 0o755).catch(() => {});
+    return p;
+  } catch {
+    return null;
+  }
+}
+const bins: { ffmpeg?: string; ffprobe?: string } = {};
+async function resolveBin(name: "ffmpeg" | "ffprobe"): Promise<string | null> {
+  const explicit = process.env[name === "ffmpeg" ? "FFMPEG_PATH" : "FFPROBE_PATH"];
+  const candidates = [explicit, name, await bundledPath(name === "ffmpeg" ? "@ffmpeg-installer/ffmpeg" : "@ffprobe-installer/ffprobe")];
+  for (const c of candidates) {
+    if (!c) continue;
+    const ok = await run(c, ["-version"], 10_000).then(() => true, () => false);
+    if (ok) return (bins[name] = c);
+  }
+  return null;
+}
+
 let ffmpegOk: boolean | undefined;
 let ffprobeOk: boolean | undefined;
 /** ffmpeg alone is enough for audio conversion and frame extraction. */
 export async function hasFfmpeg() {
-  if (ffmpegOk === undefined) ffmpegOk = await run(process.env.FFMPEG_PATH || "ffmpeg", ["-version"], 10_000).then(() => true, () => false);
+  if (ffmpegOk === undefined) ffmpegOk = !!(await resolveBin("ffmpeg"));
   return ffmpegOk;
 }
 /** ffprobe is optional: without it, video duration and stream checks fall back to ffmpeg-only handling. */
 export async function hasFfprobe() {
-  if (ffprobeOk === undefined) ffprobeOk = await run(process.env.FFPROBE_PATH || "ffprobe", ["-version"], 10_000).then(() => true, () => false);
+  if (ffprobeOk === undefined) ffprobeOk = !!(await resolveBin("ffprobe"));
   return ffprobeOk;
 }
-const FFMPEG = () => process.env.FFMPEG_PATH || "ffmpeg";
-const FFPROBE = () => process.env.FFPROBE_PATH || "ffprobe";
+export const ffmpegPaths = () => ({ ...bins });
+const FFMPEG = () => bins.ffmpeg || "ffmpeg";
+const FFPROBE = () => bins.ffprobe || "ffprobe";
+// 16 kHz mono FLAC: lossless, compact enough, and encodable by every ffmpeg build (no external codec library).
+const SPEECH_ARGS = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "flac"];
 
 async function probe(file: string): Promise<{ duration: number; hasAudio: boolean; hasVideo: boolean }> {
   // Without ffprobe, assume both tracks exist; extraction steps tolerate a missing track.
@@ -162,11 +189,11 @@ async function processAudio(contributionId: string, m: MediaRow, errors: string[
     if ((asr.provider === "huggingface" || buf.length > TRANSCRIBE_LIMIT || !/webm|ogg|mpeg|mp4|m4a|wav|flac/.test(m.mime)) && (await hasFfmpeg())) {
       const src = path.join(dir, name);
       await fs.writeFile(src, buf);
-      const out = path.join(dir, "norm.mp3");
-      await run(FFMPEG(), ["-y", "-i", src, "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", out]);
+      const out = path.join(dir, "norm.flac");
+      await run(FFMPEG(), ["-y", "-i", src, ...SPEECH_ARGS, out]);
       buf = await fs.readFile(out);
-      name = "audio.mp3";
-      mime = "audio/mpeg";
+      name = "audio.flac";
+      mime = "audio/flac";
     }
     if (buf.length > TRANSCRIBE_LIMIT) {
       errors.push("Audio is too long to transcribe.");
@@ -181,8 +208,24 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
   const ai = await chatFor("vision");
   const canTranscribe = !!(await transcriptionSetting());
   if (!(await hasFfmpeg())) {
-    errors.push("Video analysis needs ffmpeg on the worker.");
-    await saveDerivation(contributionId, m.id, "description", "Not analysed: ffmpeg is not installed on the worker.", "none", "", true);
+    // Without ffmpeg we can't extract frames, but the speech can still be transcribed from the whole file.
+    if (canTranscribe && !(await copyCached(contributionId, m, "transcript"))) {
+      if (m.size_bytes <= TRANSCRIBE_LIMIT) {
+        const t = await transcribe(await storage().getBuffer(m.storage_key), `video.${extFor(m.mime)}`, m.mime);
+        await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
+      } else {
+        errors.push("The video is too large to transcribe without ffmpeg.");
+      }
+    }
+    await saveDerivation(
+      contributionId,
+      m.id,
+      "description",
+      "Visuals not analysed: ffmpeg isn't available on the server (on a Mac: brew install ffmpeg, then restart Lofn).",
+      "none",
+      "",
+      true,
+    );
     return;
   }
   const haveT = canTranscribe && (await copyCached(contributionId, m, "transcript"));
@@ -202,16 +245,16 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
       if (!canTranscribe) {
         await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: no transcription provider is configured (development mode).", "none", "", true);
       } else if (info.hasAudio) {
-        const audio = path.join(dir, "audio.mp3");
+        const audio = path.join(dir, "audio.flac");
         let extracted = true;
         try {
-          await run(FFMPEG(), ["-y", "-i", src, "-t", String(limit), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "32k", audio]);
+          await run(FFMPEG(), ["-y", "-i", src, "-t", String(limit), ...SPEECH_ARGS, audio]);
         } catch (e) {
           if (await hasFfprobe()) throw e;
           extracted = false; // no ffprobe to check first: most likely the video simply has no audio track
         }
         if (extracted) {
-          const t = await transcribe(await fs.readFile(audio), "audio.mp3", "audio/mpeg");
+          const t = await transcribe(await fs.readFile(audio), "audio.flac", "audio/flac");
           transcript = t.text;
           await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
         } else {

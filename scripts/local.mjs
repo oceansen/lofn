@@ -35,30 +35,16 @@ env.NODE_ENV = "production";
 function hasCmd(cmd) {
   return spawnSync(cmd, ["-version"], { stdio: "ignore" }).status === 0;
 }
-async function optionalPath(mod, pick) {
+// The worker finds ffmpeg itself (system binary first, then the copy bundled via npm).
+if (!hasCmd("ffmpeg")) {
+  let ok = false;
   try {
-    const m = await import(mod);
-    return pick(m.default ?? m);
-  } catch {
-    return null;
-  }
-}
-// Prefer a system ffmpeg; otherwise use the copies bundled via npm (made executable, then verified).
-async function bundled(cmd, mod, pick) {
-  if (hasCmd(cmd)) return null;
-  const p = await optionalPath(mod, pick);
-  if (!p || !fs.existsSync(p)) return null;
-  try {
-    fs.chmodSync(p, 0o755);
+    const { default: inst } = await import("@ffmpeg-installer/ffmpeg");
+    fs.chmodSync(inst.path, 0o755);
+    ok = hasCmd(inst.path);
   } catch {}
-  return hasCmd(p) ? p : null;
+  if (!ok) console.warn("  ! ffmpeg isn't available, so video frames won't be analysed.\n    Fix: brew install ffmpeg   (or run npm install again)\n");
 }
-const ff = await bundled("ffmpeg", "ffmpeg-static", (p) => p);
-const fp = await bundled("ffprobe", "ffprobe-static", (p) => p.path);
-if (ff) env.FFMPEG_PATH = ff;
-if (fp) env.FFPROBE_PATH = fp;
-if (!ff && !hasCmd("ffmpeg"))
-  console.warn("  ! ffmpeg isn't available: video analysis is off and some recordings can't be converted.\n    Fix: brew install ffmpeg   (or re-run npm install)\n");
 
 function portFree(port) {
   return new Promise((resolve) => {
