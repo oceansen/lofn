@@ -95,8 +95,8 @@ export function buildConsent(s: ConsentSettings, ctx: ConsentContext): ConsentDo
       heading: "Your rights",
       paragraphs: [
         "Taking part is voluntary. You can decline now, or withdraw your consent at any time with “Withdraw consent” in Lofn, without giving a reason and without any consequences for you. Withdrawal does not affect processing that happened before it.",
-        "When you withdraw, your contributions and uploads are deleted and the group answers are rewritten without them. Earlier versions of an answer, and reports already shared, may still contain wording based on your contributions.",
-        `You have the right to access, correct, delete, restrict and receive a copy of your data (“Download my data” in Lofn), and to object to its processing. Contact ${s.controllerContact} to exercise these rights.`,
+        "You can delete any of your contributions, or erase all of them, at any time while staying in the group. When you erase contributions or withdraw, your text and uploads are deleted and the group answers are rewritten without them. Earlier versions of an answer, and reports already shared, may still contain wording based on your contributions.",
+        `You have the right to access, correct, delete, restrict and receive a copy of your data, including your recordings (“Download my data” in Lofn), and to object to its processing. Contact ${s.controllerContact} to exercise these rights.`,
         `You can complain to ${s.authority}`,
       ],
     },

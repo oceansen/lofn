@@ -243,7 +243,12 @@ export function ParticipantWorkspace() {
                       ) : (
                         <div className="space-y-2.5">
                           {feed.map((c) => (
-                            <ContributionCard key={c.id} c={c} flash={flashRef === c.ref} />
+                            <ContributionCard
+                              key={c.id}
+                              c={c}
+                              flash={flashRef === c.ref}
+                              actions={c.author.mine ? <DeleteMine id={c.id} onDone={() => mutate()} /> : undefined}
+                            />
                           ))}
                         </div>
                       )}
@@ -316,5 +321,35 @@ function Instructions({ text }: { text: string }) {
         </button>
       )}
     </div>
+  );
+}
+
+function DeleteMine({ id, onDone }: { id: string; onDone: () => void }) {
+  const [ask, setAsk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!ask)
+    return (
+      <button className="text-[13px] font-semibold text-muted hover:text-alarm" onClick={() => setAsk(true)}>
+        Delete
+      </button>
+    );
+  return (
+    <span className="flex items-center gap-2 text-[13px]">
+      <span className="text-muted">Delete for good?</span>
+      <button
+        className="font-semibold text-alarm"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          await api(`/api/p/contributions/${id}`, { method: "DELETE" }).catch(() => {});
+          onDone();
+        }}
+      >
+        {busy ? "Deleting…" : "Yes, delete"}
+      </button>
+      <button className="font-semibold text-muted" onClick={() => setAsk(false)}>
+        No
+      </button>
+    </span>
   );
 }

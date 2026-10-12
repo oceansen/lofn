@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { api, fetcher } from "@/lib/client/api";
@@ -136,10 +136,29 @@ export function ConsentGate({ onSigned }: { onSigned: () => void }) {
 export function YourDataModal({ open, onClose, onChanged }: { open: boolean; onClose: () => void; onChanged: () => void }) {
   const router = useRouter();
   const { data, mutate } = useSWR<ConsentData>(open ? "/api/p/consent" : null, fetcher);
-  const [confirm, setConfirm] = useState(false);
+  const [confirm, setConfirm] = useState<null | "withdraw" | "erase">(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [report, setReport] = useState<null | { imported: number; skipped: { ref: string; reason: string }[] }>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const s = data?.signed;
+  async function importFile(f: File) {
+    setBusy(true);
+    setErr(null);
+    setReport(null);
+    try {
+      const res = await fetch("/api/p/my-data", { method: "POST", headers: { "content-type": "application/zip" }, body: f });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || `Import failed (${res.status}).`);
+      setReport(j);
+      onChanged();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function toggleRecordings() {
     if (!data || !s) return;
     setBusy(true);
@@ -155,10 +174,40 @@ export function YourDataModal({ open, onClose, onChanged }: { open: boolean; onC
     }
   }
   return (
-    <Modal open={open} onClose={() => (setConfirm(false), onClose())} title="Consent and your data" wide>
+    <Modal open={open} onClose={() => (setConfirm(null), setReport(null), setNote(null), onClose())} title="Consent and your data" wide>
       {!data || !s ? (
         <Spinner className="size-6 text-spruce" />
-      ) : confirm ? (
+      ) : confirm === "erase" ? (
+        <div>
+          <p className="text-[16px]">
+            This deletes everything you sent in this project: text, recordings, photos, videos, transcripts and descriptions. The group answers are
+            rewritten without them. You stay in the group and can keep contributing. This can’t be undone.
+          </p>
+          {err && <p className="mt-2 text-sm text-alarm">{err}</p>}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button onClick={() => setConfirm(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              busy={busy}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  const r = await api("/api/p/my-data", { method: "DELETE" });
+                  setNote(`Erased ${r.erased} contribution${r.erased === 1 ? "" : "s"}.`);
+                  setConfirm(null);
+                  onChanged();
+                } catch (e: any) {
+                  setErr(e.message);
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Erase my contributions
+            </Button>
+          </div>
+        </div>
+      ) : confirm === "withdraw" ? (
         <div>
           <p className="text-[16px]">
             Withdrawing deletes everything you sent in this project: text, recordings, photos, videos, transcripts and descriptions. The group answers are rewritten
@@ -166,7 +215,7 @@ export function YourDataModal({ open, onClose, onChanged }: { open: boolean; onC
           </p>
           {err && <p className="mt-2 text-sm text-alarm">{err}</p>}
           <div className="mt-5 flex justify-end gap-2">
-            <Button onClick={() => setConfirm(false)}>Keep my consent</Button>
+            <Button onClick={() => setConfirm(null)}>Keep my consent</Button>
             <Button
               variant="danger"
               busy={busy}
@@ -199,9 +248,7 @@ export function YourDataModal({ open, onClose, onChanged }: { open: boolean; onC
             <Button size="sm" onClick={toggleRecordings} busy={busy}>
               {s.choices.recordings ? "Stop allowing recordings" : "Allow recordings, photos and videos"}
             </Button>
-            <a href="/api/p/my-data" className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-line-strong bg-surface px-3 text-sm font-semibold hover:border-ink">
-              Download my data
-            </a>
+
             <a
               href={`data:text/plain;charset=utf-8,${encodeURIComponent(`${s.text}\n\nSigned: ${s.signedName}, ${new Date(s.signedAt).toISOString()}`)}`}
               download="lofn-consent.txt"
@@ -209,10 +256,51 @@ export function YourDataModal({ open, onClose, onChanged }: { open: boolean; onC
             >
               Download signed form
             </a>
-            <Button size="sm" variant="danger" onClick={() => setConfirm(true)}>
+            <Button size="sm" variant="danger" onClick={() => setConfirm("withdraw")}>
               Withdraw consent
             </Button>
           </div>
+
+          <section className="rounded-[var(--radius-md)] border border-line p-4">
+            <h3 className="font-display text-[17px] font-semibold">Your contributions</h3>
+            <p className="mt-1 text-[14.5px] text-muted">
+              Download everything you sent (with your photos, recordings and videos), add a previous download back into this project’s current round,
+              or erase it all. You can also delete single contributions from your feed.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a href="/api/p/my-data" className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-line-strong bg-surface px-3 text-sm font-semibold hover:border-ink">
+                Download my data (.zip)
+              </a>
+              <a href="/api/p/my-data?format=json" className="inline-flex h-8 items-center rounded-[var(--radius-sm)] px-3 text-sm font-semibold text-muted hover:text-ink">
+                Data only (.json)
+              </a>
+              <Button size="sm" busy={busy} onClick={() => fileInput.current?.click()}>
+                Import my data
+              </Button>
+              <input ref={fileInput} type="file" accept=".zip,application/zip" className="hidden" onChange={(e) => (e.target.files?.[0] && importFile(e.target.files[0]), (e.target.value = ""))} />
+              <Button size="sm" variant="danger" onClick={() => setConfirm("erase")}>
+                Erase my contributions
+              </Button>
+            </div>
+            {report && (
+              <div role="status" className="mt-3 text-[14.5px]">
+                <p className="font-semibold text-spruce">
+                  Imported {report.imported} contribution{report.imported === 1 ? "" : "s"} into the current round.
+                </p>
+                {report.skipped.length > 0 && (
+                  <ul className="mt-1 list-disc pl-5 text-muted">
+                    {report.skipped.slice(0, 8).map((x, i) => (
+                      <li key={i}>
+                        {x.ref}: {x.reason}
+                      </li>
+                    ))}
+                    {report.skipped.length > 8 && <li>…and {report.skipped.length - 8} more skipped</li>}
+                  </ul>
+                )}
+              </div>
+            )}
+            {note && <p role="status" className="mt-3 text-[14.5px] font-semibold text-spruce">{note}</p>}
+          </section>
           {err && <p className="text-sm text-alarm">{err}</p>}
           <details className="rounded-[var(--radius-md)] border border-line p-4">
             <summary className="cursor-pointer font-semibold">Read the form you signed</summary>

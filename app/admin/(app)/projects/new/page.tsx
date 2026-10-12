@@ -15,10 +15,10 @@ export default function NewProject() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/projects/import", { method: "POST", headers: { "content-type": "application/json" }, body: await f.text() });
+      const res = await fetch("/api/admin/projects/import", { method: "POST", headers: { "content-type": f.type || "application/octet-stream" }, body: f });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Import failed (${res.status}).`);
-      router.push(`/admin/projects/${data.id}/groups`);
+      router.push(data.restored ? `/admin/projects/${data.id}` : `/admin/projects/${data.id}/groups`);
     } catch (e: any) {
       setError(e.message);
       setBusy(false);
@@ -41,13 +41,23 @@ export default function NewProject() {
           />
         </section>
         <section className="rounded-[var(--radius-lg)] border border-line bg-surface p-5 lg:self-start">
-          <h2 className="font-display text-lg font-semibold">Import a project file</h2>
+          <h2 className="font-display text-lg font-semibold">Import a project</h2>
           <p className="mt-1 text-[15px] text-muted">
-            A Lofn project file (.json) sets up everything in one step: questions with their reference images, groups with fresh access codes, and cycles.
+            <strong>Project archive (.zip)</strong>: restores a whole project exported from Lofn, with every round, contribution, recording, answer and
+            version, and the consent register, as a new project of yours. Groups get fresh access codes.
           </p>
-          <input ref={input} type="file" accept="application/json,.json" className="hidden" onChange={(e) => e.target.files?.[0] && importFile(e.target.files[0])} />
+          <p className="mt-2 text-[15px] text-muted">
+            <strong>Project file (.json)</strong>: sets up the structure in one step: questions with their reference images, groups and cycles.
+          </p>
+          <input
+            ref={input}
+            type="file"
+            accept="application/json,.json,application/zip,.zip"
+            className="hidden"
+            onChange={(e) => (e.target.files?.[0] && importFile(e.target.files[0]), (e.target.value = ""))}
+          />
           <Button className="mt-4" variant="primary" busy={busy} onClick={() => input.current?.click()}>
-            Choose project file
+            {busy ? "Importing…" : "Choose archive or project file"}
           </Button>
           {error && (
             <p role="alert" className="mt-3 text-sm font-medium text-alarm">

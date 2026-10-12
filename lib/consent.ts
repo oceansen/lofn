@@ -133,31 +133,28 @@ export async function signConsent(ctx: ParticipantCtx, versionId: string, signed
 }
 
 /**
- * Withdraw consent: erase the participant's contributions (text, media, transcripts, descriptions),
- * rewrite affected answers without them, and remove the participant. The signed record is kept, marked
- * withdrawn, as proof of what was agreed and when it was revoked.
+ * Erase a participant's contributions (all, or the given ids): text, media files, transcripts and descriptions.
+ * The rows stay as hidden, empty placeholders so citation numbers stay stable; affected answers are rewritten.
  */
-export async function withdrawParticipant(ctx: ParticipantCtx) {
-  const contribs = await query(`SELECT id, cycle_id, group_id, question_id, project_id FROM contributions WHERE participant_id=$1`, [ctx.participant.id]);
-  const media = await query(`SELECT id, storage_key FROM media WHERE participant_id=$1 AND deleted_at IS NULL`, [ctx.participant.id]);
+export async function eraseContributions(participantId: string, onlyIds?: string[]) {
+  const contribs = await query(
+    `SELECT id, cycle_id, group_id, question_id, project_id FROM contributions c
+      WHERE participant_id=$1 ${onlyIds ? "AND id = ANY($2::uuid[])" : ""}
+        AND (NOT hidden OR text_content <> '' OR EXISTS (SELECT 1 FROM media m WHERE m.contribution_id=c.id AND m.deleted_at IS NULL)
+             OR EXISTS (SELECT 1 FROM derivations d WHERE d.contribution_id=c.id))`,
+    onlyIds ? [participantId, onlyIds] : [participantId],
+  );
+  if (!contribs.length) return { erased: 0, contribs };
+  const ids = contribs.map((c) => c.id);
+  const media = await query(`SELECT id, storage_key FROM media WHERE contribution_id = ANY($1::uuid[]) AND deleted_at IS NULL`, [ids]);
   await deleteMediaRows(media);
   await tx(async (db) => {
-    if (contribs.length) {
-      const ids = contribs.map((c) => c.id);
-      await db.query(`DELETE FROM derivations WHERE contribution_id = ANY($1::uuid[])`, [ids]);
-      await db.query(
-        `UPDATE contributions SET hidden=true, hidden_at=COALESCE(hidden_at, now()), text_content='', processing_error=NULL WHERE id = ANY($1::uuid[])`,
-        [ids],
-      );
-    }
+    await db.query(`DELETE FROM derivations WHERE contribution_id = ANY($1::uuid[])`, [ids]);
     await db.query(
-      `UPDATE participant_consents SET withdrawn_at=COALESCE(withdrawn_at, now()), erased_contributions=$2
-        WHERE id = (SELECT id FROM participant_consents WHERE participant_id=$1 ORDER BY signed_at DESC LIMIT 1)`,
-      [ctx.participant.id, contribs.length],
+      `UPDATE contributions SET hidden=true, hidden_at=COALESCE(hidden_at, now()), text_content='', processing_error=NULL WHERE id = ANY($1::uuid[])`,
+      [ids],
     );
-    await db.query(`DELETE FROM participants WHERE id=$1`, [ctx.participant.id]);
   });
-  // Rewrite every affected answer without the erased contributions (running rounds are also picked up by the next tick).
   const seen = new Set<string>();
   for (const c of contribs) {
     const a = await one(`SELECT id FROM answers WHERE cycle_id=$1 AND group_id=$2 AND question_id=$3`, [c.cycle_id, c.group_id, c.question_id]);
@@ -168,7 +165,27 @@ export async function withdrawParticipant(ctx: ParticipantCtx) {
     }
     await publish({ t: "contribution", projectId: c.project_id, groupId: c.group_id, cycleId: c.cycle_id, questionId: c.question_id, id: c.id });
   }
-  return { erased: contribs.length };
+  return { erased: contribs.length, contribs };
+}
+
+/**
+ * Withdraw consent: erase the participant's contributions, rewrite affected answers without them, and remove
+ * the participant. The signed record is kept, marked withdrawn, as proof of what was agreed and when it was revoked.
+ */
+export async function withdrawParticipant(ctx: ParticipantCtx) {
+  // Uploads never attached to a contribution go too.
+  const loose = await query(`SELECT id, storage_key FROM media WHERE participant_id=$1 AND deleted_at IS NULL AND contribution_id IS NULL`, [ctx.participant.id]);
+  await deleteMediaRows(loose);
+  const { erased } = await eraseContributions(ctx.participant.id);
+  await tx(async (db) => {
+    await db.query(
+      `UPDATE participant_consents SET withdrawn_at=COALESCE(withdrawn_at, now()), erased_contributions=$2
+        WHERE id = (SELECT id FROM participant_consents WHERE participant_id=$1 ORDER BY signed_at DESC LIMIT 1)`,
+      [ctx.participant.id, erased],
+    );
+    await db.query(`DELETE FROM participants WHERE id=$1`, [ctx.participant.id]);
+  });
+  return { erased };
 }
 
 /** Everything Lofn holds about this participant (GDPR access and portability). */
@@ -180,22 +197,26 @@ export async function participantData(ctx: ParticipantCtx) {
     [ctx.participant.id],
   );
   const contributions = await query(
-    `SELECT c.ref_no, c.kind, c.text_content, c.created_at, c.hidden, q.title AS question, cy.name AS round,
+    `SELECT c.id, c.ref_no, c.kind, c.text_content, c.created_at, c.hidden, c.question_id, q.title AS question, cy.name AS round,
             (SELECT json_agg(json_build_object('type', d.type, 'content', d.content)) FROM derivations d WHERE d.contribution_id=c.id) AS derived,
-            (SELECT json_agg(json_build_object('category', m.category, 'mime', m.mime, 'bytes', m.size_bytes, 'deleted', m.deleted_at IS NOT NULL, 'url', '/api/media/' || m.id))
-               FROM media m WHERE m.contribution_id=c.id) AS media
+            (SELECT json_agg(json_build_object('id', m.id, 'category', m.category, 'mime', m.mime, 'bytes', m.size_bytes, 'name', m.original_name, 'deleted', m.deleted_at IS NOT NULL)
+               ORDER BY m.position) FROM media m WHERE m.contribution_id=c.id) AS media
        FROM contributions c JOIN questions q ON q.id=c.question_id JOIN cycles cy ON cy.id=c.cycle_id
-      WHERE c.participant_id=$1 ORDER BY c.created_at`,
+      WHERE c.participant_id=$1 AND NOT (c.hidden AND c.text_content = '' AND NOT EXISTS (SELECT 1 FROM media m WHERE m.contribution_id=c.id AND m.deleted_at IS NULL))
+      ORDER BY c.created_at`,
     [ctx.participant.id],
   );
   return {
+    format: "lofn-participant/v1",
     exportedAt: new Date().toISOString(),
+    projectId: ctx.project.id,
     project: ctx.project.name,
     group: ctx.group.name,
     you: { label: ctx.participant.alias, name: ctx.participant.display_name || null },
     consent,
     contributions: contributions.map((c) => ({
       ref: `C${c.ref_no}`,
+      questionId: c.question_id,
       question: c.question,
       round: c.round,
       kind: c.kind,
@@ -203,7 +224,7 @@ export async function participantData(ctx: ParticipantCtx) {
       sentAt: c.created_at,
       removedByFacilitator: c.hidden,
       transcriptsAndDescriptions: c.derived ?? [],
-      media: c.media ?? [],
+      media: (c.media ?? []).map((m: any) => ({ ...m, file: m.deleted ? null : `media/${m.id}` })),
     })),
   };
 }

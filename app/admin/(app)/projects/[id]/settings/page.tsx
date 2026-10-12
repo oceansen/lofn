@@ -65,6 +65,20 @@ export default function SettingsPage({ params }: { params: Promise<{ id: string 
           </Button>
         </div>
         <div className="rounded-[var(--radius-lg)] border border-line bg-surface p-5">
+          <h3 className="font-display text-lg font-semibold">Export all project data</h3>
+          <p className="mt-1 text-[15px] text-muted">
+            One .zip with everything: questions, groups, rounds, every contribution with its photos, recordings and videos, transcripts, all answer
+            versions, syntheses and the consent register. Import it under New project to restore or move the project.
+          </p>
+          <a
+            href={`/api/admin/projects/${id}/archive`}
+            className="mt-3 inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-line-strong bg-surface px-3 text-sm font-semibold hover:border-ink"
+          >
+            Download project archive
+          </a>
+          <p className="mt-2 text-[13.5px] text-muted">It contains participants’ personal data. Keep it as safe as the project itself.</p>
+        </div>
+        <div className="rounded-[var(--radius-lg)] border border-line bg-surface p-5">
           <h3 className="font-display text-lg font-semibold">Project</h3>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button

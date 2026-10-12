@@ -43,29 +43,50 @@ export async function saveUpload(req: Request, ctx: ParticipantCtx, category: Me
     if (writeError) throw new ApiError(500, "Couldn't store the upload. Try again.");
     await new Promise<void>((resolve, reject) => out.end((err?: Error | null) => (err || writeError ? reject(err || writeError) : resolve())));
     if (size === 0) throw badRequest("The file is empty.");
-
-    const { fileTypeFromBuffer } = await import("file-type");
-    const sniffed = await fileTypeFromBuffer(head);
-    let mime = sniffed?.mime as string | undefined;
-    // WAV/Ogg variants sniff with alternative names.
-    if (mime === "audio/x-wav" || mime === "audio/wave") mime = "audio/wav";
-    if (mime === "audio/x-m4a") mime = "audio/mp4";
-    if (!mime || !ALLOWED_MIME[category].includes(mime)) {
-      throw new ApiError(415, `That file type isn't supported for ${category}${sniffed ? ` (${sniffed.mime})` : ""}.`);
-    }
-    const id = crypto.randomUUID();
-    const key = `projects/${ctx.project.id}/groups/${ctx.group.id}/${id}`;
-    await storage().putFile(key, tmp, mime);
-    await query(
-      `INSERT INTO media(id, project_id, group_id, participant_id, category, storage_key, mime, size_bytes, original_name, sha256)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [id, ctx.project.id, ctx.group.id, ctx.participant.id, category, key, mime, size, originalName.slice(0, 200), hash.digest("hex")],
-    );
-    return { id, mime, size, category };
+    return await ingestFile(tmp, { projectId: ctx.project.id, groupId: ctx.group.id, participantId: ctx.participant.id }, category, originalName);
   } finally {
     out.destroy();
     await fsp.unlink(tmp).catch(() => {});
   }
+}
+
+/** Sniff, hash and store a file already on disk as a media row. The temp file is consumed. */
+export async function ingestFile(
+  tmp: string,
+  scope: { projectId: string; groupId: string; participantId: string | null; contributionId?: string | null; position?: number; createdAt?: string | null; id?: string },
+  category: MediaCategory,
+  originalName: string,
+) {
+  const stat = await fsp.stat(tmp);
+  if (stat.size === 0) throw badRequest("The file is empty.");
+  if (stat.size > maxBytes(category)) throw new ApiError(413, `File is too large. The limit for ${category} is ${Math.round(maxBytes(category) / 1024 / 1024)} MB.`);
+  const hash = crypto.createHash("sha256");
+  for await (const c of fs.createReadStream(tmp)) hash.update(c as Buffer);
+  const fh = await fsp.open(tmp, "r");
+  const head = Buffer.alloc(Math.min(4100, stat.size));
+  try {
+    await fh.read(head, 0, head.length, 0);
+  } finally {
+    await fh.close();
+  }
+  const { fileTypeFromBuffer } = await import("file-type");
+  const sniffed = await fileTypeFromBuffer(head);
+  let mime = sniffed?.mime as string | undefined;
+  // WAV/Ogg variants sniff with alternative names.
+  if (mime === "audio/x-wav" || mime === "audio/wave") mime = "audio/wav";
+  if (mime === "audio/x-m4a") mime = "audio/mp4";
+  if (!mime || !ALLOWED_MIME[category].includes(mime)) {
+    throw new ApiError(415, `That file type isn't supported for ${category}${sniffed ? ` (${sniffed.mime})` : ""}.`);
+  }
+  const id = scope.id ?? crypto.randomUUID();
+  const key = `projects/${scope.projectId}/groups/${scope.groupId}/${id}`;
+  await storage().putFile(key, tmp, mime);
+  await query(
+    `INSERT INTO media(id, project_id, group_id, participant_id, contribution_id, position, category, storage_key, mime, size_bytes, original_name, sha256, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, COALESCE($13::timestamptz, now()))`,
+    [id, scope.projectId, scope.groupId, scope.participantId, scope.contributionId ?? null, scope.position ?? 0, category, key, mime, stat.size, originalName.slice(0, 200), hash.digest("hex"), scope.createdAt ?? null],
+  );
+  return { id, mime, size: stat.size, category };
 }
 
 export async function createContribution(ctx: ParticipantCtx, input: { questionId: string; text: string; mediaIds: string[] }) {
