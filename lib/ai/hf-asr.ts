@@ -55,6 +55,18 @@ const ext = (mime: string) => {
   return m.includes("flac") ? "flac" : m.includes("wav") ? "wav" : m.includes("mpeg") || m.includes("mp3") ? "mp3" : m.includes("ogg") ? "ogg" : m.includes("mp4") || m.includes("m4a") ? "m4a" : "webm";
 };
 
+/** The audio/* content type HF Inference accepts for a file of this mime type. */
+export function audioContentType(mime: string) {
+  const m = mime.split(";")[0].trim().toLowerCase();
+  if (/wav|wave/.test(m)) return "audio/wav";
+  if (/flac/.test(m)) return "audio/flac";
+  if (/mpeg|mp3/.test(m)) return "audio/mpeg";
+  if (/ogg|opus/.test(m)) return "audio/ogg";
+  if (/webm|matroska/.test(m)) return "audio/webm";
+  if (/mp4|m4a|aac|quicktime|3gpp/.test(m)) return "audio/m4a";
+  return m.startsWith("audio/") ? m : "audio/flac";
+}
+
 export class AsrHttpError extends Error {
   constructor(message: string, public retryable: boolean) {
     super(message);
@@ -66,10 +78,13 @@ export async function hfTranscribe(key: string, model: string, audio: Buffer, mi
   const auth = { authorization: `Bearer ${key}` };
   let res: Response;
   if (route.provider === "hf-inference") {
+    // HF Inference takes the raw audio bytes with an audio/* content type (as @huggingface/inference sends it).
+    // A base64 string in a JSON body is now treated as a file name or URL, and browser recordings labelled
+    // video/webm are rejected, so container types are mapped to their audio equivalents.
     res = await fetch(`${config.ai.hfRouterUrl}/hf-inference/models/${route.providerId}`, {
       method: "POST",
-      headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify({ inputs: audio.toString("base64") }),
+      headers: { ...auth, "content-type": audioContentType(mime) },
+      body: new Uint8Array(audio),
       signal,
     });
   } else if (route.provider === "fal-ai") {
