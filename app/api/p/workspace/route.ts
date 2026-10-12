@@ -4,7 +4,7 @@ import { one, query } from "@/lib/db";
 import { cycleView, currentCycleForProject, type CycleRow } from "@/lib/cycles";
 import { answers, contributions } from "@/lib/views";
 import { config } from "@/lib/config";
-import { aiStatus } from "@/lib/ai/settings";
+import { aiForProject, statusOf } from "@/lib/ai/settings";
 
 /** Everything a participant may see: their project, their group, their assigned questions — nothing else. */
 export const GET = route(async (req) => {
@@ -35,7 +35,7 @@ export const GET = route(async (req) => {
       ctx.participant.id,
     );
   }
-  const ai = await aiStatus();
+  const ai = await statusOf(await aiForProject(ctx.project.id));
   return json({
     project: { id: ctx.project.id, name: ctx.project.name, description: ctx.project.description },
     group: { id: ctx.group.id, name: ctx.group.name },

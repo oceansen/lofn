@@ -8,14 +8,20 @@ type Task = "synthesis" | "vision" | "transcription";
 type Setting = { provider: string; model: string };
 type Data = {
   settings: Record<Task, Setting>;
-  keys: Record<string, boolean>;
+  keys: Record<string, string | null>;
+  openaiBaseUrl: string;
+  keyProviders: string[];
   defaults: Record<Task, Record<string, string>>;
   providers: { chat: string[]; asr: string[] };
 };
 type Model = { id: string; task: string; providers: string[]; structured: boolean; recommended: boolean; downloads: number; likes: number; vision: boolean };
 
 const LABEL: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", huggingface: "Hugging Face", none: "Off" };
-const KEY: Record<string, string> = { anthropic: "ANTHROPIC_API_KEY", openai: "OPENAI_API_KEY", huggingface: "HF_TOKEN" };
+const KEY_HELP: Record<string, { hint: string; url: string; placeholder: string }> = {
+  huggingface: { hint: "A fine-grained token with “Make calls to Inference Providers” permission. Usage is billed to your Hugging Face account.", url: "https://huggingface.co/settings/tokens", placeholder: "hf_…" },
+  anthropic: { hint: "An Anthropic API key from the Claude Console.", url: "https://console.anthropic.com/settings/keys", placeholder: "sk-ant-…" },
+  openai: { hint: "An OpenAI API key, or a key for any OpenAI-compatible endpoint set below.", url: "https://platform.openai.com/api-keys", placeholder: "sk-…" },
+};
 const TASKS: { task: Task; title: string; help: string }[] = [
   { task: "synthesis", title: "Answer synthesis", help: "Weaves contributions into each group’s answer every minute, and writes the project-level synthesis. Choose a strong instruction-following model." },
   { task: "vision", title: "Image and video interpretation", help: "Describes photos and video keyframes so they can be used as evidence. Needs a vision-language model." },
@@ -32,12 +38,13 @@ export function AiSettingsForm() {
   }, [data, draft]);
   if (!data || !draft) return <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6"><Spinner className="size-6 text-spruce" /></main>;
 
+  const has = Object.fromEntries(Object.entries(data.keys).map(([k, v]) => [k, !!v]));
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.settings);
   async function save() {
     setBusy(true);
     setMsg(null);
     try {
-      const r = await api("/api/admin/ai", { method: "PUT", body: draft });
+      const r = await api("/api/admin/ai", { method: "PUT", body: { settings: draft } });
       setDraft(r.settings);
       mutate();
       setMsg({ tone: "ok", text: "Saved. New contributions use these models within a few seconds." });
@@ -50,17 +57,18 @@ export function AiSettingsForm() {
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
-      <h1 className="font-display text-[34px] leading-tight font-bold">AI models</h1>
+      <h1 className="font-display text-[34px] leading-tight font-bold">AI settings</h1>
       <p className="mt-1 max-w-[62ch] text-muted">
-        Choose which provider and model handle each job. Hugging Face gives you access to open models served by its Inference Providers, billed to your Hugging Face account.
+        Your projects run on your own API keys and the models you choose here. Usage is billed to your provider account, and nobody else’s projects can use your keys.
       </p>
-      {!Object.values(data.keys).some(Boolean) && (
+      {!Object.values(has).some(Boolean) && (
         <Notice tone="tide" className="mt-5">
-          No API keys are configured on the server, so Lofn runs in its labelled development fallback. Add <code>HF_TOKEN</code> (a Hugging Face token with
-          “Make calls to Inference Providers” permission), <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code> as environment variables or Space secrets, then restart.
+          You haven’t added a key yet, so your projects use Lofn’s clearly labelled development fallback. Add a Hugging Face token below to get started.
         </Notice>
       )}
-      <div className="mt-6 space-y-5">
+      <KeysCard data={data} onChange={() => mutate()} />
+      <h2 className="mt-10 font-display text-xl font-semibold">Models</h2>
+      <div className="mt-3 space-y-5">
         {TASKS.map(({ task, title, help }) => (
           <TaskCard
             key={task}
@@ -69,7 +77,7 @@ export function AiSettingsForm() {
             help={help}
             value={draft[task]}
             providers={task === "transcription" ? data.providers.asr : data.providers.chat}
-            keys={data.keys}
+            keys={has}
             defaults={data.defaults[task]}
             onChange={(v) => setDraft({ ...draft, [task]: v })}
           />
@@ -141,7 +149,7 @@ function TaskCard({
           )}
           {missingKey && (
             <p className="mt-2 text-sm text-alarm">
-              Set <code>{KEY[value.provider]}</code> on the server to use {LABEL[value.provider]}. Until then this job uses the development fallback.
+              Add your {LABEL[value.provider]} key above to use it. Until then this job uses the development fallback.
             </p>
           )}
           <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -219,5 +227,136 @@ function HfModelPicker({ task, value, onChange }: { task: Task; value: string; o
       </div>
       <p className="mt-1.5 text-[12.5px] text-muted">Recommended: served by several providers or with structured JSON output, which Lofn’s synthesis relies on.</p>
     </div>
+  );
+}
+
+function KeysCard({ data, onChange }: { data: Data; onChange: () => void }) {
+  return (
+    <section className="mt-6 rounded-[var(--radius-lg)] border border-line bg-surface p-5">
+      <h2 className="font-display text-lg font-semibold">Your API keys</h2>
+      <p className="mt-0.5 max-w-[65ch] text-[14.5px] text-muted">
+        Stored encrypted and only used for your own projects. Lofn never shows a saved key again, only its last characters.
+      </p>
+      <div className="mt-4 divide-y divide-line">
+        {data.keyProviders.map((p) => (
+          <KeyRow key={p} provider={p} masked={data.keys[p]} onChange={onChange} />
+        ))}
+      </div>
+      <OpenAiBase value={data.openaiBaseUrl} settings={data.settings} onChange={onChange} />
+    </section>
+  );
+}
+
+function KeyRow({ provider, masked, onChange }: { provider: string; masked: string | null; onChange: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const help = KEY_HELP[provider];
+  async function put(key: string | null) {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api("/api/admin/ai/keys", { method: "PUT", body: { provider, key } });
+      setValue("");
+      setEditing(false);
+      onChange();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="py-3.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="w-32 font-semibold">{LABEL[provider]}</span>
+        {masked ? <Pill tone="spruce">Saved · {masked}</Pill> : <span className="text-sm text-muted">Not added</span>}
+        <div className="ml-auto flex gap-2">
+          {!editing && (
+            <Button size="sm" onClick={() => setEditing(true)}>
+              {masked ? "Replace" : "Add key"}
+            </Button>
+          )}
+          {masked && !editing && (
+            <Button size="sm" variant="ghost" busy={busy} onClick={() => put(null)}>
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+      {editing && (
+        <form
+          className="mt-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (value.trim()) put(value.trim());
+          }}
+        >
+          <div className="flex flex-wrap gap-2">
+            <Input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={help.placeholder}
+              aria-label={`${LABEL[provider]} API key`}
+              className="max-w-md font-mono text-[14px]"
+              autoFocus
+            />
+            <Button type="submit" variant="primary" size="sm" busy={busy} disabled={!value.trim()}>
+              Save key
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => (setEditing(false), setValue(""), setErr(null))}>
+              Cancel
+            </Button>
+          </div>
+          <p className="mt-1.5 text-[13px] text-muted">
+            {help.hint}{" "}
+            <a href={help.url} target="_blank" rel="noreferrer" className="font-semibold text-spruce hover:underline">
+              Get a key
+            </a>
+          </p>
+        </form>
+      )}
+      {err && <p className="mt-2 text-sm text-alarm">{err}</p>}
+    </div>
+  );
+}
+
+function OpenAiBase({ value, settings, onChange }: { value: string; settings: Data["settings"]; onChange: () => void }) {
+  const [v, setV] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => setV(value), [value]);
+  return (
+    <details className="mt-3 border-t border-line pt-3 text-[14.5px]">
+      <summary className="cursor-pointer font-semibold text-muted">OpenAI-compatible endpoint</summary>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Input value={v} onChange={(e) => setV(e.target.value)} className="max-w-md font-mono text-[14px]" aria-label="OpenAI base URL" />
+        <Button
+          size="sm"
+          busy={busy}
+          disabled={v.trim() === value}
+          onClick={async () => {
+            setBusy(true);
+            setErr(null);
+            try {
+              await api("/api/admin/ai", { method: "PUT", body: { settings, openaiBaseUrl: v.trim() } });
+              onChange();
+            } catch (e: any) {
+              setErr(e.message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Save
+        </Button>
+      </div>
+      <p className="mt-1 text-[13px] text-muted">Leave as https://api.openai.com/v1 unless you use another OpenAI-compatible service with your OpenAI key.</p>
+      {err && <p className="mt-1 text-sm text-alarm">{err}</p>}
+    </details>
   );
 }

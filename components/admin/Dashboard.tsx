@@ -43,15 +43,23 @@ export function Dashboard() {
         </Button>
       </div>
 
-      {sys?.ai?.isFallback && isAdmin && (
+      {sys?.ai?.isFallback && (
         <Notice tone="tide" className="mt-6">
-          <strong>AI synthesis is not configured.</strong> Answers will be clearly labelled development fallbacks that list contributions verbatim. Set{" "}
-          <code>HF_TOKEN</code>, <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code>, then choose models under <a className="font-semibold underline" href="/admin/ai">AI models</a>.
+          {sys.ai.hasAnyKey ? (
+            <>
+              <strong>Your synthesis model has no key.</strong> Pick the provider whose key you added, or add a key for the chosen one, under{" "}
+            </>
+          ) : (
+            <>
+              <strong>Add your AI key.</strong> Your projects use your own Hugging Face, Anthropic or OpenAI key. Until you add one under{" "}
+            </>
+          )}
+          <a className="font-semibold underline" href="/admin/ai">AI settings</a>{sys.ai.hasAnyKey ? ". Until then" : ","} answers are clearly labelled development fallbacks that list contributions verbatim.
         </Notice>
       )}
-      {sys && isAdmin && !sys.ai.isFallback && sys.ai.transcriptionFallback && (
+      {sys && !sys.ai.isFallback && sys.ai.transcriptionFallback && (
         <Notice className="mt-6 text-[14.5px]">
-          Transcription is off, so recordings are stored but not transcribed. Turn it on under <a className="font-semibold underline" href="/admin/ai">AI models</a> (Hugging Face Whisper or OpenAI).
+          Transcription is off, so recordings are stored but not transcribed. Turn it on under <a className="font-semibold underline" href="/admin/ai">AI settings</a> (Hugging Face Whisper or OpenAI).
         </Notice>
       )}
 
@@ -131,11 +139,15 @@ export function Dashboard() {
           </button>
         )}
       </div>
-      {sys && isAdmin && (
+      {sys && (
         <p className="mt-10 text-[13px] text-muted">
-          AI: {sys.ai.isFallback ? "development fallback" : `${sys.ai.synthesisProvider} (${sys.ai.synthesisModel})`}. Transcription:{" "}
-          {sys.ai.transcriptionFallback ? "off" : `${sys.ai.transcriptionProvider} (${sys.ai.transcriptionModel})`}. Synthesis every {sys.synthesisIntervalSeconds}s. Queue: {sys.queue.queued} waiting,{" "}
-          {sys.queue.running} running{sys.queue.failed_24h ? `, ${sys.queue.failed_24h} failed today` : ""}. Storage: {sys.storage}.
+          Your AI: {sys.ai.isFallback ? "development fallback" : `${sys.ai.synthesisProvider} (${sys.ai.synthesisModel})`}. Transcription:{" "}
+          {sys.ai.transcriptionFallback ? "off" : `${sys.ai.transcriptionProvider} (${sys.ai.transcriptionModel})`}. Synthesis every {sys.synthesisIntervalSeconds}s.
+          {isAdmin && sys.queue && (
+            <>
+              {" "}Queue: {sys.queue.queued} waiting, {sys.queue.running} running{sys.queue.failed_24h ? `, ${sys.queue.failed_24h} failed today` : ""}. Storage: {sys.storage}.
+            </>
+          )}
         </p>
       )}
     </main>

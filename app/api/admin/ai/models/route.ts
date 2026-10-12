@@ -1,5 +1,5 @@
 import { json, route, badRequest } from "@/lib/http";
-import { requireInstanceAdmin as requireAdmin } from "@/lib/session";
+import { requireAdmin } from "@/lib/session";
 
 // Models on the Hugging Face Hub that are served by Inference Providers, by task.
 const TASKS: Record<string, { tags: string[]; provider: string }> = {

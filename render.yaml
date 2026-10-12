@@ -33,10 +33,7 @@ services:
         value: /app/storage
       - key: WORKER_CONCURRENCY
         value: "3"
-      # AI keys: you are prompted for these when creating the Blueprint. Leave empty for the labelled dev fallback.
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: AI_PROVIDER
-        sync: false
+      # AI keys are not set here: every account adds its own key in the app (AI settings).
+      # Encrypts those keys at rest. Keep it stable: changing it makes saved keys unreadable.
+      - key: SECRETS_KEY
+        generateValue: true

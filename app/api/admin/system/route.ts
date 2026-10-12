@@ -14,6 +14,6 @@ export const GET = route(async () => {
        FROM jobs`,
   );
   // Queue and storage details are instance-wide, so only administrators see them.
-  if (me.role !== "admin") return json({ ai: await aiStatus(), synthesisIntervalSeconds: config.synthesis.intervalMs / 1000 });
-  return json({ ai: await aiStatus(), storage: config.storage.driver, synthesisIntervalSeconds: config.synthesis.intervalMs / 1000, queue: q });
+  if (me.role !== "admin") return json({ ai: await aiStatus(me.id), synthesisIntervalSeconds: config.synthesis.intervalMs / 1000 });
+  return json({ ai: await aiStatus(me.id), storage: config.storage.driver, synthesisIntervalSeconds: config.synthesis.intervalMs / 1000, queue: q });
 });

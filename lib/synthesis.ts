@@ -3,6 +3,7 @@ import { one, query, tx } from "./db";
 import { publish } from "./events";
 import { randomToken } from "./security";
 import { chatFor, parseJsonLoose } from "./ai/provider";
+import { aiForProject } from "./ai/settings";
 import { emptyContent, normalizeContent, type AnswerContent } from "./answer-content";
 
 export type Trigger = "tick" | "final" | "manual";
@@ -82,7 +83,7 @@ function fallbackContent(included: Contribution[]): AnswerContent {
     return `- ${short.replace(/\s+/g, " ")} [C${x.ref_no}]`;
   });
   c.answer =
-    `**Development fallback — not an AI synthesis.** No AI provider is configured, so Lofn is listing contributions verbatim instead of synthesising them. Configure a model under AI models (with \`HF_TOKEN\`, \`ANTHROPIC_API_KEY\` or \`OPENAI_API_KEY\` set) to enable real synthesis.\n\n` +
+    `**Development fallback — not an AI synthesis.** The project owner hasn't added an AI key, so Lofn is listing contributions verbatim instead of synthesising them. Add your own key under AI settings to enable real synthesis.\n\n` +
     (lines.length ? lines.join("\n") : "_No contributions yet._");
   c.refs = included.map((x) => x.ref_no);
   c.changes = [{ type: "added", text: `Listed ${included.length} contribution${included.length === 1 ? "" : "s"} (no synthesis).` }];
@@ -141,7 +142,7 @@ export async function synthesizeAnswer(answerId: string, trigger: Trigger, jobCr
     const fresh = candidates.filter((c) => !c.hidden && (c.status === "ready" || c.status === "failed"));
     const removed = candidates.filter((c) => c.hidden);
     // Without an AI provider, media-only contributions are still listed (as uninterpreted) in the fallback digest.
-    const ai = await chatFor("synthesis");
+    const ai = chatFor("synthesis", await aiForProject(a.project_id));
     const usable = (c: Contribution) => hasUsableEvidence(c) || (!ai && c.status === "ready");
     const skipped = fresh.filter((c) => !usable(c));
     const added = fresh.filter(usable);

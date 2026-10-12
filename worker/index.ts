@@ -5,7 +5,6 @@
  */
 import os from "node:os";
 import { config } from "../lib/config";
-import { aiStatus } from "../lib/ai/settings";
 import { pool, query, one } from "../lib/db";
 import { claim, complete, enqueue, fail, reapStale, reschedule, type Job } from "../lib/jobs";
 import { expireDueCycles, rearmPendingFinals } from "../lib/cycles";
@@ -138,12 +137,9 @@ async function clock() {
 
 async function main() {
   if (process.env.AUTO_MIGRATE !== "false") await migrate();
-  const ai = await aiStatus();
   console.log(`[worker] ${workerId} starting with ${config.worker.concurrency} slots`);
   console.log(
-    `[worker] AI synthesis: ${ai.isFallback ? "DEVELOPMENT FALLBACK (no provider configured)" : `${ai.synthesisProvider} / ${ai.synthesisModel}`}; ` +
-      `vision: ${ai.visionFallback ? "off" : `${ai.visionProvider} / ${ai.visionModel}`}; ` +
-      `transcription: ${ai.transcriptionFallback ? "not configured" : `${ai.transcriptionProvider} / ${ai.transcriptionModel}`}; ffmpeg: ${(await hasFfmpeg()) ? ffmpegPaths().ffmpeg : "NO (video frames not analysed; install ffmpeg)"}, ffprobe: ${(await hasFfprobe()) ? ffmpegPaths().ffprobe : "no"}`,
+    `[worker] AI: each project uses its owner's own keys (no server keys); ffmpeg: ${(await hasFfmpeg()) ? ffmpegPaths().ffmpeg : "NO (video frames not analysed; install ffmpeg)"}, ffprobe: ${(await hasFfprobe()) ? ffmpegPaths().ffprobe : "no"}`,
   );
   const tasks = [clock(), ...Array.from({ length: config.worker.concurrency }, (_, i) => runner(i))];
   const shutdown = async () => {

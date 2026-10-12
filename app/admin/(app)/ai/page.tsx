@@ -1,12 +1,9 @@
-import { redirect } from "next/navigation";
-import { getAdmin } from "@/lib/session";
 import { AiSettingsForm } from "@/components/admin/AiSettings";
 
-export const metadata = { title: "AI models" };
+export const metadata = { title: "AI settings" };
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
-  const me = await getAdmin();
-  if (me?.role !== "admin") redirect("/admin");
+// Every account sets up its own AI keys and models; the (app) layout already requires sign-in.
+export default function Page() {
   return <AiSettingsForm />;
 }

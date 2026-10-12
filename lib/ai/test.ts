@@ -1,7 +1,7 @@
-// Quick live checks so an administrator can confirm a provider/model works before a session.
+// Quick live checks so an account owner can confirm a provider/model works before a session.
 import { config } from "../config";
 import { makeChat, parseJsonLoose } from "./provider";
-import { hasKey, type Task } from "./settings";
+import { keyFor, type Task, type UserAi } from "./settings";
 
 /** 1 second of a 440 Hz tone as 16 kHz mono WAV (no speech: we only check the endpoint answers). */
 function toneWav(): Buffer {
@@ -20,17 +20,17 @@ async function redSquare(): Promise<string> {
   return png.toString("base64");
 }
 
-export async function testModel(task: Task, provider: string, model: string) {
+export async function testModel(ai0: UserAi, task: Task, provider: string, model: string) {
   const t0 = Date.now();
   if (provider === "none") return { ok: true, latencyMs: 0, sample: "Development fallback: no AI calls are made." };
-  if (!hasKey(provider)) return { ok: false, latencyMs: 0, error: `No API key for ${provider} is configured on the server.` };
+  if (!keyFor(ai0, provider)) return { ok: false, latencyMs: 0, error: `Add your ${provider === "huggingface" ? "Hugging Face" : provider === "anthropic" ? "Anthropic" : "OpenAI"} key first.` };
   try {
     if (task === "transcription") {
-      const r = await transcribeWith(provider, model);
+      const r = await transcribeWith(ai0, provider, model);
       return { ok: true, latencyMs: Date.now() - t0, sample: r || "(the endpoint answered; the test tone contains no speech)" };
     }
-    const ai = makeChat(provider, model);
-    if (!ai) return { ok: false, latencyMs: 0, error: "This provider isn't available on the server." };
+    const ai = makeChat(provider, model, ai0);
+    if (!ai) return { ok: false, latencyMs: 0, error: "This provider can't be used for this task." };
     if (task === "vision") {
       const out = await ai.complete({
         system: "Answer in one short sentence.",
@@ -55,12 +55,12 @@ export async function testModel(task: Task, provider: string, model: string) {
 }
 
 // Transcription test that doesn't touch persisted settings.
-async function transcribeWith(provider: string, model: string) {
+async function transcribeWith(ai: UserAi, provider: string, model: string) {
   const audio = toneWav();
   if (provider === "huggingface") {
     const res = await fetch(`${config.ai.hfInferenceUrl}/${model.split(":")[0]}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${keyFor(ai, "huggingface")}`, "content-type": "application/json" },
       body: JSON.stringify({ inputs: audio.toString("base64") }),
       signal: AbortSignal.timeout(120_000),
     });
@@ -71,9 +71,9 @@ async function transcribeWith(provider: string, model: string) {
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(audio)], { type: "audio/wav" }), "test.wav");
   form.append("model", model);
-  const res = await fetch(`${config.ai.openaiBaseUrl}/audio/transcriptions`, {
+  const res = await fetch(`${ai.openaiBaseUrl}/audio/transcriptions`, {
     method: "POST",
-    headers: { authorization: `Bearer ${config.ai.openaiKey}` },
+    headers: { authorization: `Bearer ${keyFor(ai, "openai")}` },
     body: form,
     signal: AbortSignal.timeout(120_000),
   });

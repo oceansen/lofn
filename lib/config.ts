@@ -10,43 +10,17 @@ function int(name: string, fallback: number): number {
 export type AiProviderName = "anthropic" | "openai" | "huggingface" | "none";
 export type AsrProviderName = "openai" | "huggingface" | "none";
 
-const HF_TOKEN = () => process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY || "";
-
-function resolveProvider(): AiProviderName {
-  const explicit = (process.env.AI_PROVIDER || "").toLowerCase();
-  if (explicit === "hf") return "huggingface";
-  if (explicit === "anthropic" || explicit === "openai" || explicit === "huggingface" || explicit === "none") return explicit;
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  if (process.env.OPENAI_API_KEY) return "openai";
-  if (HF_TOKEN()) return "huggingface";
-  return "none";
-}
-
-function resolveTranscription(): AsrProviderName {
-  const explicit = (process.env.TRANSCRIPTION_PROVIDER || "").toLowerCase();
-  if (explicit === "hf") return "huggingface";
-  if (explicit === "openai" || explicit === "huggingface" || explicit === "none") return explicit;
-  if (process.env.OPENAI_API_KEY) return "openai";
-  if (HF_TOKEN()) return "huggingface";
-  return "none";
-}
-
 export const config = {
   databaseUrl: process.env.DATABASE_URL || "postgres://lofn:lofn@localhost:5432/lofn",
   appUrl: (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || (process.env.SPACE_HOST ? `https://${process.env.SPACE_HOST}` : "") || "http://localhost:3000").replace(/\/$/, ""),
   isProd: process.env.NODE_ENV === "production",
 
+  // AI keys come from each account (bring your own key); the server holds no provider keys.
   ai: {
-    provider: resolveProvider(),
-    transcription: resolveTranscription(),
-    anthropicKey: process.env.ANTHROPIC_API_KEY || "",
     anthropicModel: process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5",
     anthropicBaseUrl: (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/$/, ""),
-    openaiKey: process.env.OPENAI_API_KEY || "",
-    openaiBaseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, ""),
     openaiModel: process.env.OPENAI_MODEL || "gpt-4o",
     openaiTranscriptionModel: process.env.OPENAI_TRANSCRIPTION_MODEL || "whisper-1",
-    hfToken: HF_TOKEN(),
     hfBaseUrl: (process.env.HF_BASE_URL || "https://router.huggingface.co/v1").replace(/\/$/, ""),
     hfInferenceUrl: (process.env.HF_INFERENCE_URL || "https://router.huggingface.co/hf-inference/models").replace(/\/$/, ""),
     hfModel: process.env.HF_MODEL || "Qwen/Qwen3.8-27B",

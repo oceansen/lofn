@@ -198,7 +198,7 @@ export async function projectOverview(projectId: string, cycleId?: string | null
     answers: answerList,
     timeline,
     processing,
-    ai: await aiStatus(),
+    ai: await aiStatus(project.owner_id),
     serverNow: Date.now(),
   };
 }

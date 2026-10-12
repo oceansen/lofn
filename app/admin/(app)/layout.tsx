@@ -20,11 +20,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Link href="/admin" className="rounded-md px-2.5 py-1.5 font-semibold hover:bg-ink/5">
               Projects
             </Link>
+            <Link href="/admin/ai" className="rounded-md px-2.5 py-1.5 font-semibold hover:bg-ink/5">
+              AI settings
+            </Link>
             {admin.role === "admin" && (
               <>
-                <Link href="/admin/ai" className="rounded-md px-2.5 py-1.5 font-semibold hover:bg-ink/5">
-                  AI models
-                </Link>
                 <Link href="/admin/users" className="rounded-md px-2.5 py-1.5 font-semibold hover:bg-ink/5">
                   Users
                 </Link>

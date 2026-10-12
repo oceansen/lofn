@@ -8,6 +8,7 @@ import { publish } from "./events";
 import { enqueue } from "./jobs";
 import { storage, extFor } from "./storage";
 import { chatFor, transcribe, transcriptionSetting, type ChatProvider, type Part } from "./ai/provider";
+import { aiForProject, type UserAi } from "./ai/settings";
 
 type MediaRow = {
   id: string;
@@ -149,11 +150,11 @@ async function copyCached(contributionId: string, m: MediaRow, type: "transcript
 
 // ---------- per-media processors ----------
 
-async function processImages(contributionId: string, imgs: MediaRow[], note: string, question: string, errors: string[]) {
-  const ai = await chatFor("vision");
+async function processImages(owner: UserAi | null, contributionId: string, imgs: MediaRow[], note: string, question: string, errors: string[]) {
+  const ai = chatFor("vision", owner);
   if (!ai) {
     for (const m of imgs)
-      await saveDerivation(contributionId, m.id, "description", "Not interpreted: no AI vision provider is configured (development mode).", "none", "", true);
+      await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision key set (development mode).", "none", "", true);
     return;
   }
   // Images in one contribution are described together so their relationship is captured.
@@ -173,10 +174,10 @@ async function processImages(contributionId: string, imgs: MediaRow[], note: str
   }
 }
 
-async function processAudio(contributionId: string, m: MediaRow, errors: string[]) {
-  const asr = await transcriptionSetting();
+async function processAudio(owner: UserAi | null, contributionId: string, m: MediaRow, errors: string[]) {
+  const asr = transcriptionSetting(owner);
   if (!asr) {
-    await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: no transcription provider is configured (development mode).", "none", "", true);
+    await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: the project owner has no transcription key set (development mode).", "none", "", true);
     return;
   }
   if (await copyCached(contributionId, m, "transcript")) return;
@@ -199,19 +200,19 @@ async function processAudio(contributionId: string, m: MediaRow, errors: string[
       errors.push("Audio is too long to transcribe.");
       throw new Error("Audio is too long to transcribe.");
     }
-    const t = await transcribe(buf, name, mime);
+    const t = await transcribe(owner, buf, name, mime);
     await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
   });
 }
 
-async function processVideo(contributionId: string, m: MediaRow, note: string, question: string, errors: string[]) {
-  const ai = await chatFor("vision");
-  const canTranscribe = !!(await transcriptionSetting());
+async function processVideo(owner: UserAi | null, contributionId: string, m: MediaRow, note: string, question: string, errors: string[]) {
+  const ai = chatFor("vision", owner);
+  const canTranscribe = !!transcriptionSetting(owner);
   if (!(await hasFfmpeg())) {
     // Without ffmpeg we can't extract frames, but the speech can still be transcribed from the whole file.
     if (canTranscribe && !(await copyCached(contributionId, m, "transcript"))) {
       if (m.size_bytes <= TRANSCRIBE_LIMIT) {
-        const t = await transcribe(await storage().getBuffer(m.storage_key), `video.${extFor(m.mime)}`, m.mime);
+        const t = await transcribe(owner, await storage().getBuffer(m.storage_key), `video.${extFor(m.mime)}`, m.mime);
         await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
       } else {
         errors.push("The video is too large to transcribe without ffmpeg.");
@@ -231,8 +232,8 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
   const haveT = canTranscribe && (await copyCached(contributionId, m, "transcript"));
   const haveD = ai && (await copyCached(contributionId, m, "description"));
   if ((haveT || !canTranscribe) && (haveD || !ai)) {
-    if (!canTranscribe) await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: no transcription provider is configured (development mode).", "none", "", true);
-    if (!ai) await saveDerivation(contributionId, m.id, "description", "Not interpreted: no AI vision provider is configured (development mode).", "none", "", true);
+    if (!canTranscribe) await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: the project owner has no transcription key set (development mode).", "none", "", true);
+    if (!ai) await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision key set (development mode).", "none", "", true);
     return;
   }
   await withTmp(async (dir) => {
@@ -243,7 +244,7 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
     let transcript = "";
     if (!haveT) {
       if (!canTranscribe) {
-        await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: no transcription provider is configured (development mode).", "none", "", true);
+        await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: the project owner has no transcription key set (development mode).", "none", "", true);
       } else if (info.hasAudio) {
         const audio = path.join(dir, "audio.flac");
         let extracted = true;
@@ -254,7 +255,7 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
           extracted = false; // no ffprobe to check first: most likely the video simply has no audio track
         }
         if (extracted) {
-          const t = await transcribe(await fs.readFile(audio), "audio.flac", "audio/flac");
+          const t = await transcribe(owner, await fs.readFile(audio), "audio.flac", "audio/flac");
           transcript = t.text;
           await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
         } else {
@@ -268,7 +269,7 @@ async function processVideo(contributionId: string, m: MediaRow, note: string, q
     }
     if (!haveD) {
       if (!ai) {
-        await saveDerivation(contributionId, m.id, "description", "Not interpreted: no AI vision provider is configured (development mode).", "none", "", true);
+        await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision key set (development mode).", "none", "", true);
         return;
       }
       if (!info.hasVideo) {
@@ -321,9 +322,10 @@ export async function processContribution(contributionId: string, attempt: numbe
   const errors: string[] = [];
   try {
     const images = media.filter((m) => m.category === "image");
-    if (images.length) await processImages(contributionId, images, c.text_content, c.question_title, errors);
-    for (const m of media.filter((m) => m.category === "audio")) await processAudio(contributionId, m, errors);
-    for (const m of media.filter((m) => m.category === "video")) await processVideo(contributionId, m, c.text_content, c.question_title, errors);
+    const owner = await aiForProject(c.project_id);
+    if (images.length) await processImages(owner, contributionId, images, c.text_content, c.question_title, errors);
+    for (const m of media.filter((m) => m.category === "audio")) await processAudio(owner, contributionId, m, errors);
+    for (const m of media.filter((m) => m.category === "video")) await processVideo(owner, contributionId, m, c.text_content, c.question_title, errors);
     await query(`UPDATE contributions SET status='ready', processing_error=$2, processed_at=now() WHERE id=$1`, [
       contributionId,
       errors.length ? errors.join(" ") : null,

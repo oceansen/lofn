@@ -1,5 +1,5 @@
 import { config } from "../config";
-import { getAiSettings, isLive } from "./settings";
+import { isLive, keyFor, type UserAi } from "./settings";
 
 export type Part = { type: "text"; text: string } | { type: "image"; mime: string; base64: string };
 
@@ -45,7 +45,7 @@ async function postJson(url: string, headers: Record<string, string>, payload: u
 
 class AnthropicProvider implements ChatProvider {
   name = "anthropic" as const;
-  constructor(public model: string) {}
+  constructor(public model: string, private key: string) {}
   async complete({ system, parts, maxTokens, temperature }: CompleteArgs) {
     const content = parts.map((p) =>
       p.type === "text"
@@ -54,7 +54,7 @@ class AnthropicProvider implements ChatProvider {
     );
     const data = await postJson(
       `${config.ai.anthropicBaseUrl}/v1/messages`,
-      { "x-api-key": config.ai.anthropicKey, "anthropic-version": "2023-06-01" },
+      { "x-api-key": this.key, "anthropic-version": "2023-06-01" },
       {
         model: this.model,
         max_tokens: maxTokens ?? config.ai.maxOutputTokens,
@@ -115,20 +115,21 @@ export function stripReasoning(text: string) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\S]*?<\/think>/i, "").trim();
 }
 
-export function makeChat(provider: string, model: string): ChatProvider | null {
-  if (!model) return null;
-  if (provider === "anthropic" && config.ai.anthropicKey) return new AnthropicProvider(model);
-  if (provider === "openai" && config.ai.openaiKey)
-    return new OpenAICompatibleProvider("openai", model, config.ai.openaiBaseUrl, config.ai.openaiKey, process.env.OPENAI_TOKENS_PARAM || "max_completion_tokens", true);
-  if (provider === "huggingface" && config.ai.hfToken)
-    return new OpenAICompatibleProvider("huggingface", model, config.ai.hfBaseUrl, config.ai.hfToken, "max_tokens", process.env.HF_JSON_MODE !== "false");
+/** Build a chat client for a provider using the given account's own key. Returns null without a key. */
+export function makeChat(provider: string, model: string, ai: UserAi): ChatProvider | null {
+  const key = keyFor(ai, provider);
+  if (!model || !key) return null;
+  if (provider === "anthropic") return new AnthropicProvider(model, key);
+  if (provider === "openai") return new OpenAICompatibleProvider("openai", model, ai.openaiBaseUrl, key, process.env.OPENAI_TOKENS_PARAM || "max_completion_tokens", true);
+  if (provider === "huggingface") return new OpenAICompatibleProvider("huggingface", model, config.ai.hfBaseUrl, key, "max_tokens", process.env.HF_JSON_MODE !== "false");
   return null;
 }
 
-/** Provider for a task, per the current settings. Returns null in development-fallback mode. */
-export async function chatFor(task: "synthesis" | "vision"): Promise<ChatProvider | null> {
-  const s = (await getAiSettings())[task];
-  return makeChat(s.provider, s.model);
+/** Chat client for a task under the project owner's settings. Null = development fallback (no key or turned off). */
+export function chatFor(task: "synthesis" | "vision", ai: UserAi | null): ChatProvider | null {
+  if (!ai) return null;
+  const s = ai.tasks[task];
+  return makeChat(s.provider, s.model, ai);
 }
 
 export function parseJsonLoose<T = any>(text: string): T {
@@ -147,13 +148,9 @@ export function parseJsonLoose<T = any>(text: string): T {
 
 // ---------- transcription ----------
 
-export async function transcriptionSetting() {
-  const s = (await getAiSettings()).transcription;
-  return isLive(s) ? s : null;
-}
-
-export async function transcriptionAvailable() {
-  return !!(await transcriptionSetting());
+export function transcriptionSetting(ai: UserAi | null) {
+  if (!ai || !isLive(ai, "transcription")) return null;
+  return ai.tasks.transcription;
 }
 
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
@@ -170,8 +167,8 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastErr;
 }
 
-export async function transcribe(audio: Buffer, filename: string, mime: string): Promise<{ text: string; model: string; provider: string }> {
-  const s = await transcriptionSetting();
+export async function transcribe(ai: UserAi | null, audio: Buffer, filename: string, mime: string): Promise<{ text: string; model: string; provider: string }> {
+  const s = transcriptionSetting(ai);
   if (!s) throw new AiError("No transcription provider configured.", false);
   const timeout = AbortSignal.timeout(Math.max(config.ai.timeoutMs, 300_000));
 
@@ -182,7 +179,7 @@ export async function transcribe(audio: Buffer, filename: string, mime: string):
     return withRetry(async () => {
       const res = await fetch(`${config.ai.hfInferenceUrl}/${s.model.split(":")[0]}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${config.ai.hfToken}`, "content-type": "application/json" },
+        headers: { authorization: `Bearer ${keyFor(ai!, "huggingface")}`, "content-type": "application/json" },
         body: payload,
         signal: timeout,
       });
@@ -201,9 +198,9 @@ export async function transcribe(audio: Buffer, filename: string, mime: string):
     form.append("file", new Blob([new Uint8Array(audio)], { type: mime }), filename);
     form.append("model", s.model);
     form.append("response_format", "json");
-    const res = await fetch(`${config.ai.openaiBaseUrl}/audio/transcriptions`, {
+    const res = await fetch(`${ai!.openaiBaseUrl}/audio/transcriptions`, {
       method: "POST",
-      headers: { authorization: `Bearer ${config.ai.openaiKey}` },
+      headers: { authorization: `Bearer ${keyFor(ai!, "openai")}` },
       body: form,
       signal: timeout,
     });

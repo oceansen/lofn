@@ -1,6 +1,7 @@
 import { one, query } from "./db";
 import { publish } from "./events";
 import { chatFor, parseJsonLoose } from "./ai/provider";
+import { aiForProject } from "./ai/settings";
 import { contentToMarkdown } from "./answer-content";
 
 export type GroupRefItem = { text: string; groups: number[] };
@@ -61,7 +62,7 @@ export async function runProjectSynthesis(synthesisId: string) {
         ORDER BY a.group_id, a.question_id, COALESCE(c.started_at, c.created_at) DESC`,
       [s.project_id, s.cycle_id],
     );
-    const ai = await chatFor("synthesis");
+    const ai = chatFor("synthesis", await aiForProject(s.project_id));
     const out: ProjectSynthesisContent = { overview: "", questions: [] };
     for (const q of questions) {
       const answers = latest.filter((r) => r.question_id === q.id).sort((x, y) => x.group_name.localeCompare(y.group_name));
@@ -75,7 +76,7 @@ export async function runProjectSynthesis(synthesisId: string) {
       }
       if (!ai) {
         base.synthesis =
-          `**Development fallback — not an AI synthesis.** No AI provider is configured; group answers are listed side by side.\n\n` +
+          `**Development fallback — not an AI synthesis.** The project owner hasn't added an AI key; group answers are listed side by side.\n\n` +
           answers.map((r, i) => `**[G${i + 1}] ${r.group_name}:** ${String(r.content.answer).replace(/\[C\d+\]/g, "").slice(0, 600)}`).join("\n\n");
         out.questions.push(base);
         continue;
