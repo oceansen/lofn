@@ -8,6 +8,7 @@ import { AnswerPanel, type AnswerView } from "@/components/AnswerPanel";
 import { ContributionCard, type ContributionView } from "@/components/ContributionCard";
 import { Composer, type Limits } from "@/components/Composer";
 import { Button, LofnMark, Modal, Notice, Spinner, cx } from "@/components/ui";
+import { ConsentGate, YourDataModal } from "@/components/participant/Consent";
 
 type Workspace = {
   project: { id: string; name: string; description: string };
@@ -21,6 +22,7 @@ type Workspace = {
   citedEarlier: ContributionView[];
   limits: Limits;
   ai: { isFallback: boolean; transcriptionFallback: boolean };
+  consent: { recordings: boolean; health: boolean; signedAt: string; version: number };
 };
 
 export function ParticipantWorkspace() {
@@ -35,6 +37,7 @@ export function ParticipantWorkspace() {
   const [earlier, setEarlier] = useState<ContributionView | null>(null);
   const [zoom, setZoom] = useState(false);
   const [seen, setSeen] = useState<Record<string, number>>({});
+  const [dataOpen, setDataOpen] = useState(false);
 
   useEffect(() => {
     if (error instanceof HttpError && (error.status === 401 || error.status === 403)) router.replace("/");
@@ -76,6 +79,7 @@ export function ParticipantWorkspace() {
     });
   };
 
+  if (error instanceof HttpError && error.status === 428) return <ConsentGate onSigned={() => mutate()} />;
   if (!data) {
     return (
       <div className="flex min-h-dvh items-center justify-center">
@@ -224,6 +228,7 @@ export function ParticipantWorkspace() {
                       enabled={open}
                       disabledReason={disabledReason}
                       limits={data.limits}
+                      allowMedia={data.consent.recordings}
                       onSent={() => mutate()}
                     />
                     {data.ai.transcriptionFallback && open && <p className="text-[13px] text-muted">Voice and video are saved but won’t be transcribed on this server.</p>}
@@ -266,18 +271,24 @@ export function ParticipantWorkspace() {
         <span>
           You appear as {data.me.display_name || data.me.alias} to your group and facilitator.
         </span>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="whitespace-nowrap"
-          onClick={async () => {
-            await api("/api/p/leave", { body: {} }).catch(() => {});
-            router.replace("/");
-          }}
-        >
-          Leave group
-        </Button>
+        <span className="flex flex-wrap gap-1">
+          <Button size="sm" variant="ghost" className="whitespace-nowrap" onClick={() => setDataOpen(true)}>
+            Consent and your data
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="whitespace-nowrap"
+            onClick={async () => {
+              await api("/api/p/leave", { body: {} }).catch(() => {});
+              router.replace("/");
+            }}
+          >
+            Leave group
+          </Button>
+        </span>
       </footer>
+      <YourDataModal open={dataOpen} onClose={() => setDataOpen(false)} onChanged={() => mutate()} />
 
       <Modal open={zoom && !!q?.image_version} onClose={() => setZoom(false)} title={q?.title ?? ""} wide>
         {q?.image_version && (

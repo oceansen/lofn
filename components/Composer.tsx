@@ -37,7 +37,7 @@ async function prepareImage(file: File): Promise<Blob> {
   }
 }
 
-export function Composer({ questionId, enabled, disabledReason, limits, onSent }: { questionId: string; enabled: boolean; disabledReason?: string; limits: Limits; onSent?: () => void }) {
+export function Composer({ questionId, enabled, disabledReason, limits, onSent, allowMedia = true }: { questionId: string; enabled: boolean; disabledReason?: string; limits: Limits; onSent?: () => void; allowMedia?: boolean }) {
   const [text, setText] = useState("");
   const [items, setItems] = useState<Attachment[]>([]);
   const [busy, setBusy] = useState(false);
@@ -207,9 +207,15 @@ export function Composer({ questionId, enabled, disabledReason, limits, onSent }
         <input ref={imageInput} type="file" accept="image/*" multiple className="hidden" onChange={(e) => (onImages(e.target.files), (e.target.value = ""))} />
         <input ref={videoInput} type="file" accept="video/*" className="hidden" onChange={(e) => (e.target.files?.[0] && add("video", e.target.files[0], e.target.files[0].name), (e.target.value = ""))} />
         <input ref={audioInput} type="file" accept="audio/*" className="hidden" onChange={(e) => (e.target.files?.[0] && add("audio", e.target.files[0], e.target.files[0].name), (e.target.value = ""))} />
-        <ToolButton label="Photo" kind="image" onClick={() => imageInput.current?.click()} disabled={busy} />
-        <ToolButton label="Voice" kind="audio" onClick={() => setRecording("audio")} disabled={busy} />
-        <ToolButton label="Video" kind="video" onClick={() => setRecording("video")} disabled={busy} />
+        {allowMedia ? (
+          <>
+            <ToolButton label="Photo" kind="image" onClick={() => imageInput.current?.click()} disabled={busy} />
+            <ToolButton label="Voice" kind="audio" onClick={() => setRecording("audio")} disabled={busy} />
+            <ToolButton label="Video" kind="video" onClick={() => setRecording("video")} disabled={busy} />
+          </>
+        ) : (
+          <span className="text-[13px] text-muted">Text only. Allow recordings under “Consent and your data” to add photos, voice or video.</span>
+        )}
         <span className="ml-auto flex items-center gap-2">
           {sentFlash && (
             <span className="text-sm font-semibold text-spruce" role="status">

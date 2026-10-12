@@ -4,6 +4,7 @@ import { saveUpload } from "@/lib/contributions";
 import { one } from "@/lib/db";
 import { rateLimit } from "@/lib/security";
 import { ApiError } from "@/lib/http";
+import { requireConsent } from "@/lib/consent";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,7 @@ export const runtime = "nodejs";
 export const POST = route(async (req) => {
   const ctx = await requireParticipant();
   if (!rateLimit(`upload:${ctx.participant.id}`, 30, 60_000)) throw new ApiError(429, "You're uploading very quickly. Wait a moment and try again.");
+  await requireConsent(ctx, "recordings");
   const sp = new URL(req.url).searchParams;
   const category = sp.get("category");
   if (category !== "image" && category !== "audio" && category !== "video") throw badRequest("Unknown media category.");

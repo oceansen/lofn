@@ -100,6 +100,18 @@ Tuning options: `SYNTHESIS_INTERVAL_SECONDS` (default 60) and `FINAL_SYNTHESIS_W
 - **Who can sign up.** Anyone can create an account with email and password, Google or GitHub, and each account sees only its own projects. Participants still need no account: they join a group with its code.
 - **Administrators.** The first account to sign up becomes the instance administrator. Administrators manage users and the sign-up policy. They can't open other people's projects, and like everyone else they use their own AI key.
 - **Participants** never create accounts: they join a group with its access code on the home page.
+
+## Consent (GDPR and HIPAA)
+
+After entering a group code, every participant reads the project's consent form and signs it with their typed name. Until they do, the server refuses their contributions and uploads. Facilitators edit the form under **Project → Consent**.
+
+- **GDPR.** The form gives the information Art. 13 requires: controller and contact, DPO, purpose, legal basis (consent), what is collected and derived, the AI providers that process it (taken from the owner's AI settings), recipients, storage location and transfers, retention, rights, complaint authority, and that no automated decisions are made. Consent is granular. Text contributions are the core consent. Recordings, photos and videos need a separate optional consent, and without it the composer is text only. Participants also confirm a minimum age (Art. 8).
+- **Health data.** Turning on health information adds explicit consent for special-category data (Art. 9(2)(a)) and a HIPAA authorization (45 CFR 164.508). The authorization covers the information described, the recipients, purpose, expiry, the right to revoke, non-conditioning of treatment, and redisclosure. HIPAA also requires Business Associate Agreements with your hosting and AI providers, which Lofn can't provide or check.
+- **Versioning.** Each distinct wording is stored verbatim as a version with its SHA-256. When the wording changes, for example after you edit the form or change your AI model, participants must sign again before they can contribute.
+- **Proof.** The consent register records who signed, which version, which choices, and when they signed or withdrew. Facilitators can download it as CSV, along with the full text of every version.
+- **Participant rights.** Under "Consent and your data", participants can view and download what they signed, change the recordings consent, download all their data as JSON (access and portability), or withdraw. Withdrawing erases their text, media, transcripts and descriptions, rewrites the affected answers without them, and removes them from the group. Earlier answer versions and reports already shared may still contain wording derived from their contributions, and the form says so.
+
+The default wording is a starting point, not legal advice. Have your data protection officer review it for each project.
 - **Sign-up policy.** Set it under **Users** to one of four modes:
   - *Anyone can sign up*
   - *Sign-ups need approval*

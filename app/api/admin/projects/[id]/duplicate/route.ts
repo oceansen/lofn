@@ -17,6 +17,7 @@ export const POST = route<Ctx>(async (_req, { params }) => {
       [admin.id, `${src.name} (copy)`, src.description, src.default_cycle_minutes, src.media_retention_days, src.synthesis_guidance],
       db,
     );
+    await db.query(`INSERT INTO project_consent(project_id, settings, reviewed) SELECT $1, settings, reviewed FROM project_consent WHERE project_id=$2`, [p.id, src.id]);
     const qmap = new Map<string, string>();
     const qs = await db.query(`SELECT * FROM questions WHERE project_id=$1 ORDER BY position`, [src.id]);
     for (const q of qs.rows) {

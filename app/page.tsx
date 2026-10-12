@@ -5,7 +5,7 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ code?: string }> }) {
+export default async function Home({ searchParams }: { searchParams: Promise<{ code?: string; withdrawn?: string }> }) {
   const sp = await searchParams;
   const current = await getParticipant().catch(() => null);
   return (
@@ -27,6 +27,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ c
           <p className="mt-5 max-w-[34ch] text-[19px] leading-relaxed text-muted">
             Type, talk, snap a photo or record a video. Lofn weaves everyone’s input into a shared answer you can watch take shape.
           </p>
+          {sp.withdrawn && (
+            <p role="status" className="mt-6 max-w-md rounded-[var(--radius-md)] border border-line bg-surface px-4 py-3 text-[15px]">
+              Your consent is withdrawn and your contributions have been deleted.
+            </p>
+          )}
           <div className="mt-8">
             <JoinForm initialCode={sp.code ?? ""} current={current ? { group: current.group.name, project: current.project.name } : null} />
           </div>

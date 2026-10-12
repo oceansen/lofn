@@ -12,6 +12,7 @@ const TABS = [
   { href: "/cycles", label: "Cycles" },
   { href: "/compare", label: "Compare" },
   { href: "/results", label: "Results" },
+  { href: "/consent", label: "Consent" },
   { href: "/settings", label: "Settings" },
 ];
 

@@ -5,10 +5,12 @@ import { cycleView, currentCycleForProject, type CycleRow } from "@/lib/cycles";
 import { answers, contributions } from "@/lib/views";
 import { config } from "@/lib/config";
 import { aiForProject, statusOf } from "@/lib/ai/settings";
+import { requireConsent } from "@/lib/consent";
 
 /** Everything a participant may see: their project, their group, their assigned questions — nothing else. */
 export const GET = route(async (req) => {
   const ctx = await requireParticipant();
+  const consent = await requireConsent(ctx);
   const requested = new URL(req.url).searchParams.get("cycle");
   let cycle: CycleRow | null = null;
   if (requested && isUuid(requested)) cycle = await one(`SELECT * FROM cycles WHERE id=$1 AND project_id=$2 AND status <> 'draft'`, [requested, ctx.project.id]);
@@ -53,6 +55,7 @@ export const GET = route(async (req) => {
       textChars: config.limits.textChars,
       imagesPerContribution: config.limits.imagesPerContribution,
     },
+    consent: { recordings: consent.choices.recordings, health: consent.choices.health, signedAt: consent.signedAt, version: consent.version },
     ai: { isFallback: ai.isFallback, transcriptionFallback: ai.transcriptionFallback },
     serverNow: Date.now(),
   });
