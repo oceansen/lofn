@@ -9,6 +9,7 @@ import { enqueue } from "./jobs";
 import { storage, extFor } from "./storage";
 import { chatFor, transcribe, transcriptionSetting, type ChatProvider, type Part } from "./ai/provider";
 import { aiForProject, type UserAi } from "./ai/settings";
+import { asrFormatFor, resolveHfAsr } from "./ai/hf-asr";
 
 type MediaRow = {
   id: string;
@@ -84,6 +85,16 @@ const FFMPEG = () => bins.ffmpeg || "ffmpeg";
 const FFPROBE = () => bins.ffprobe || "ffprobe";
 // 16 kHz mono FLAC: lossless, compact enough, and encodable by every ffmpeg build (no external codec library).
 const SPEECH_ARGS = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "flac"];
+// Some Hugging Face providers (fal-ai) only accept WAV or MP3: use 16 kHz mono PCM WAV for those.
+const WAV_ARGS = ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"];
+
+/** The format to convert speech to before transcription, for the owner's chosen transcription route. */
+async function speechFormat(owner: UserAi | null): Promise<{ args: string[]; ext: string; mime: string }> {
+  const s = owner?.tasks.transcription;
+  let fmt: "flac" | "wav" = "flac";
+  if (s?.provider === "huggingface") fmt = asrFormatFor((await resolveHfAsr(s.model).catch(() => ({ provider: "hf-inference" as const }))).provider);
+  return fmt === "wav" ? { args: WAV_ARGS, ext: "wav", mime: "audio/wav" } : { args: SPEECH_ARGS, ext: "flac", mime: "audio/flac" };
+}
 
 async function probe(file: string): Promise<{ duration: number; hasAudio: boolean; hasVideo: boolean }> {
   // Without ffprobe, assume both tracks exist; extraction steps tolerate a missing track.
@@ -154,7 +165,7 @@ async function processImages(owner: UserAi | null, contributionId: string, imgs:
   const ai = chatFor("vision", owner);
   if (!ai) {
     for (const m of imgs)
-      await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision key set (development mode).", "none", "", true);
+      await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision model with a key set (development mode).", "none", "", true);
     return;
   }
   // Images in one contribution are described together so their relationship is captured.
@@ -185,16 +196,17 @@ async function processAudio(owner: UserAi | null, contributionId: string, m: Med
     let buf = await storage().getBuffer(m.storage_key);
     let name = `audio.${extFor(m.mime)}`;
     let mime = m.mime;
-    // Large or unusual files are normalised to compact mono MP3 when ffmpeg is available.
-    // Hugging Face ASR is most reliable with MP3, so always normalise there.
+    // Large or unusual files are normalised to 16 kHz mono speech audio when ffmpeg is available.
+    // Hugging Face providers are most reliable with that, so always normalise there.
     if ((asr.provider === "huggingface" || buf.length > TRANSCRIBE_LIMIT || !/webm|ogg|mpeg|mp4|m4a|wav|flac/.test(m.mime)) && (await hasFfmpeg())) {
+      const fmt = await speechFormat(owner);
       const src = path.join(dir, name);
       await fs.writeFile(src, buf);
-      const out = path.join(dir, "norm.flac");
-      await run(FFMPEG(), ["-y", "-i", src, ...SPEECH_ARGS, out]);
+      const out = path.join(dir, `norm.${fmt.ext}`);
+      await run(FFMPEG(), ["-y", "-i", src, ...fmt.args, out]);
       buf = await fs.readFile(out);
-      name = "audio.flac";
-      mime = "audio/flac";
+      name = `audio.${fmt.ext}`;
+      mime = fmt.mime;
     }
     if (buf.length > TRANSCRIBE_LIMIT) {
       errors.push("Audio is too long to transcribe.");
@@ -206,7 +218,7 @@ async function processAudio(owner: UserAi | null, contributionId: string, m: Med
 }
 
 async function processVideo(owner: UserAi | null, contributionId: string, m: MediaRow, note: string, question: string, errors: string[]) {
-  const ai = chatFor("vision", owner);
+  const ai = chatFor("video", owner);
   const canTranscribe = !!transcriptionSetting(owner);
   if (!(await hasFfmpeg())) {
     // Without ffmpeg we can't extract frames, but the speech can still be transcribed from the whole file.
@@ -233,7 +245,7 @@ async function processVideo(owner: UserAi | null, contributionId: string, m: Med
   const haveD = ai && (await copyCached(contributionId, m, "description"));
   if ((haveT || !canTranscribe) && (haveD || !ai)) {
     if (!canTranscribe) await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: the project owner has no transcription key set (development mode).", "none", "", true);
-    if (!ai) await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision key set (development mode).", "none", "", true);
+    if (!ai) await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision model with a key set (development mode).", "none", "", true);
     return;
   }
   await withTmp(async (dir) => {
@@ -246,16 +258,17 @@ async function processVideo(owner: UserAi | null, contributionId: string, m: Med
       if (!canTranscribe) {
         await saveDerivation(contributionId, m.id, "transcript", "Not transcribed: the project owner has no transcription key set (development mode).", "none", "", true);
       } else if (info.hasAudio) {
-        const audio = path.join(dir, "audio.flac");
+        const fmt = await speechFormat(owner);
+        const audio = path.join(dir, `audio.${fmt.ext}`);
         let extracted = true;
         try {
-          await run(FFMPEG(), ["-y", "-i", src, "-t", String(limit), ...SPEECH_ARGS, audio]);
+          await run(FFMPEG(), ["-y", "-i", src, "-t", String(limit), ...fmt.args, audio]);
         } catch (e) {
           if (await hasFfprobe()) throw e;
           extracted = false; // no ffprobe to check first: most likely the video simply has no audio track
         }
         if (extracted) {
-          const t = await transcribe(owner, await fs.readFile(audio), "audio.flac", "audio/flac");
+          const t = await transcribe(owner, await fs.readFile(audio), `audio.${fmt.ext}`, fmt.mime);
           transcript = t.text;
           await saveDerivation(contributionId, m.id, "transcript", t.text || "(No speech detected.)", t.provider, t.model, false);
         } else {
@@ -269,7 +282,7 @@ async function processVideo(owner: UserAi | null, contributionId: string, m: Med
     }
     if (!haveD) {
       if (!ai) {
-        await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision key set (development mode).", "none", "", true);
+        await saveDerivation(contributionId, m.id, "description", "Not interpreted: the project owner has no AI vision model with a key set (development mode).", "none", "", true);
         return;
       }
       if (!info.hasVideo) {

@@ -1,5 +1,6 @@
 import { config } from "../config";
 import { isLive, keyFor, type UserAi } from "./settings";
+import { AsrHttpError, hfTranscribe } from "./hf-asr";
 
 export type Part = { type: "text"; text: string } | { type: "image"; mime: string; base64: string };
 
@@ -126,7 +127,7 @@ export function makeChat(provider: string, model: string, ai: UserAi): ChatProvi
 }
 
 /** Chat client for a task under the project owner's settings. Null = development fallback (no key or turned off). */
-export function chatFor(task: "synthesis" | "vision", ai: UserAi | null): ChatProvider | null {
+export function chatFor(task: "synthesis" | "vision" | "video", ai: UserAi | null): ChatProvider | null {
   if (!ai) return null;
   const s = ai.tasks[task];
   return makeChat(s.provider, s.model, ai);
@@ -173,23 +174,14 @@ export async function transcribe(ai: UserAi | null, audio: Buffer, filename: str
   const timeout = AbortSignal.timeout(Math.max(config.ai.timeoutMs, 300_000));
 
   if (s.provider === "huggingface") {
-    // Hugging Face Inference (automatic-speech-recognition). Audio goes base64-encoded in a JSON body:
-    // the router rejects many raw audio content types (e.g. browser-recorded video/webm), but always accepts JSON.
-    const payload = JSON.stringify({ inputs: audio.toString("base64") });
     return withRetry(async () => {
-      const res = await fetch(`${config.ai.hfInferenceUrl}/${s.model.split(":")[0]}`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${keyFor(ai!, "huggingface")}`, "content-type": "application/json" },
-        body: payload,
-        signal: timeout,
-      });
-      const text = await res.text();
-      if (res.ok) {
-        const j = JSON.parse(text);
-        return { text: String(j.text ?? j[0]?.text ?? "").trim(), model: s.model, provider: "huggingface" };
+      try {
+        const r = await hfTranscribe(keyFor(ai!, "huggingface"), s.model, audio, mime, timeout);
+        return { text: r.text, model: s.model, provider: "huggingface" };
+      } catch (e) {
+        if (e instanceof AsrHttpError) throw new AiError(e.message, e.retryable);
+        throw new AiError((e as Error).message, false);
       }
-      // 503 = model loading on HF Inference; worth retrying.
-      throw new AiError(`Transcription failed (${res.status}): ${text.slice(0, 300)}`, res.status === 429 || res.status >= 500);
     });
   }
 

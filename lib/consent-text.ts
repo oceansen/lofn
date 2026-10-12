@@ -20,7 +20,7 @@ export type ConsentSettings = {
 export type ConsentContext = {
   projectName: string;
   mediaRetentionDays: number | null;
-  ai: { synthesis: string | null; vision: string | null; transcription: string | null };
+  ai: { synthesis: string | null; vision: string | null; video?: string | null; transcription: string | null };
 };
 
 export type ConsentCheck = { id: "core" | "age" | "recordings" | "health" | "hipaa"; label: string; required: boolean };
@@ -43,7 +43,8 @@ export const DEFAULT_SETTINGS: Omit<ConsentSettings, "controllerName" | "control
 export function buildConsent(s: ConsentSettings, ctx: ConsentContext): ConsentDocument {
   const ai = [
     ctx.ai.synthesis && `combining contributions into group answers (${ctx.ai.synthesis})`,
-    ctx.ai.vision && `describing photos and video frames (${ctx.ai.vision})`,
+    ctx.ai.vision && `describing photos (${ctx.ai.vision})`,
+    ctx.ai.video && `describing frames from videos (${ctx.ai.video})`,
     ctx.ai.transcription && `transcribing speech (${ctx.ai.transcription})`,
   ].filter(Boolean) as string[];
   const media =

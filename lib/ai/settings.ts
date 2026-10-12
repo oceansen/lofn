@@ -4,7 +4,8 @@ import { config } from "../config";
 import { one, query } from "../db";
 import { decryptSecret, encryptSecret, maskSecret } from "../secrets";
 
-export type Task = "synthesis" | "vision" | "transcription";
+export type Task = "synthesis" | "vision" | "video" | "transcription";
+export const TASKS: Task[] = ["synthesis", "vision", "video", "transcription"];
 export type KeyProvider = "anthropic" | "openai" | "huggingface";
 export type TaskSetting = { provider: KeyProvider | "none"; model: string };
 export type AiSettings = Record<Task, TaskSetting>;
@@ -17,13 +18,14 @@ export const KEY_PROVIDERS: KeyProvider[] = ["huggingface", "anthropic", "openai
 export function defaultModel(task: Task, provider: string): string {
   if (provider === "anthropic") return task === "transcription" ? "" : config.ai.anthropicModel;
   if (provider === "openai") return task === "transcription" ? config.ai.openaiTranscriptionModel : config.ai.openaiModel;
-  if (provider === "huggingface") return task === "transcription" ? config.ai.hfAsrModel : task === "vision" ? config.ai.hfVisionModel : config.ai.hfModel;
+  if (provider === "huggingface") return task === "transcription" ? config.ai.hfAsrModel : task === "vision" || task === "video" ? config.ai.hfVisionModel : config.ai.hfModel;
   return "";
 }
 
 const DEFAULT_TASKS: AiSettings = {
   synthesis: { provider: "huggingface", model: defaultModel("synthesis", "huggingface") },
   vision: { provider: "huggingface", model: defaultModel("vision", "huggingface") },
+  video: { provider: "huggingface", model: defaultModel("video", "huggingface") },
   transcription: { provider: "huggingface", model: defaultModel("transcription", "huggingface") },
 };
 
@@ -35,10 +37,12 @@ export async function getUserAi(ownerId: string, fresh = false): Promise<UserAi>
   if (!fresh && hit && Date.now() - hit.at < TTL) return hit.value;
   const row = await one(`SELECT tasks, options, keys_enc FROM user_ai_settings WHERE admin_id=$1`, [ownerId]).catch(() => null);
   const tasks = { ...DEFAULT_TASKS };
-  for (const t of ["synthesis", "vision", "transcription"] as Task[]) {
+  for (const t of TASKS) {
     const s = row?.tasks?.[t];
     if (s?.provider) tasks[t] = { provider: s.provider, model: s.model || defaultModel(t, s.provider) };
   }
+  // Accounts saved before video had its own setting keep using their image model for video.
+  if (!row?.tasks?.video && row?.tasks?.vision?.provider) tasks.video = { ...tasks.vision };
   const keys: UserAi["keys"] = {};
   for (const p of KEY_PROVIDERS) {
     const enc = row?.keys_enc?.[p];
@@ -114,6 +118,9 @@ export function statusOf(ai: UserAi | null) {
     hasAnyKey: !!ai && Object.keys(ai.keys).length > 0,
     isFallback: !live("synthesis"),
     visionFallback: !live("vision"),
+    videoProvider: live("video") ? ai!.tasks.video.provider : "none",
+    videoModel: live("video") ? ai!.tasks.video.model : null,
+    videoFallback: !live("video"),
     transcriptionFallback: !live("transcription"),
   };
 }

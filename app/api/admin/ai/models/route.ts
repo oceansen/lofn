@@ -1,12 +1,15 @@
 import { json, route, badRequest } from "@/lib/http";
 import { requireAdmin } from "@/lib/session";
+import { HF_ASR_PROVIDERS } from "@/lib/ai/hf-asr";
 
 // Models on the Hugging Face Hub that are served by Inference Providers, by task.
 const TASKS: Record<string, { tags: string[]; provider: string }> = {
   synthesis: { tags: ["text-generation", "image-text-to-text"], provider: "all" },
   vision: { tags: ["image-text-to-text"], provider: "all" },
-  // Lofn calls speech recognition through HF Inference, so only models it serves are listed.
-  transcription: { tags: ["automatic-speech-recognition"], provider: "hf-inference" },
+  // Video is analysed as keyframes sent together to a vision-language model; video-text-to-text models are listed too when served.
+  video: { tags: ["image-text-to-text", "video-text-to-text"], provider: "all" },
+  // Speech recognition: every model served by a provider Lofn can call (hf-inference, deepinfra, together, fal-ai).
+  transcription: { tags: ["automatic-speech-recognition"], provider: "all" },
 };
 
 export const GET = route(async (req) => {
@@ -34,7 +37,12 @@ export const GET = route(async (req) => {
         const mapping: any[] = Array.isArray(raw) ? raw : Object.entries(raw || {}).map(([provider, v]: any) => ({ provider, ...v }));
         // Only providers that serve the model live, for the kind of call Lofn makes.
         const wanted = tag === "automatic-speech-recognition" ? "automatic-speech-recognition" : "conversational";
-        const live = mapping.filter((p) => (p.status ?? "live") === "live" && (!p.task || p.task === wanted));
+        const live = mapping.filter(
+          (p) =>
+            (p.status ?? "live") === "live" &&
+            (!p.task || p.task === wanted || (tag === "video-text-to-text" && p.task === "conversational")) &&
+            (wanted !== "automatic-speech-recognition" || (HF_ASR_PROVIDERS as readonly string[]).includes(p.provider)),
+        );
         const providers = live.map((p) => p.provider as string);
         const structured = live.some((p) => p.features?.structuredOutput);
         return {
@@ -44,7 +52,8 @@ export const GET = route(async (req) => {
           structured,
           downloads: m.downloads ?? 0,
           likes: m.likes ?? 0,
-          vision: tag === "image-text-to-text",
+          vision: tag === "image-text-to-text" || tag === "video-text-to-text",
+          video: tag === "video-text-to-text",
           // Heuristic: served by several providers, or with structured (JSON) output, which the synthesis relies on.
           recommended: tag === "automatic-speech-recognition" ? providers.length > 0 : providers.length >= 2 || structured,
         };

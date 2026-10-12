@@ -70,11 +70,11 @@ With Docker (Postgres, app and worker): `cp .env.example .env && docker compose 
 
 **Bring your own key.** The server holds no AI provider keys, and provider keys in the environment are ignored. Each account adds its own key under **AI settings**, and a project's AI work (synthesis, image/video interpretation, transcription) runs only on its owner's key. Keys are encrypted at rest with AES-256-GCM using `SECRETS_KEY` (generated into a file next to the storage directory if unset; keep it stable). The browser only ever sees the last four characters.
 
-On the same page each account picks a provider and model for each of the three jobs. It searches Hugging Face for models that Inference Providers currently serve, and has a **Test** button for each job.
+On the same page each account picks a provider and model for each of the four jobs: synthesis, photo interpretation, video interpretation (keyframes sent together to a vision-language model) and transcription (voice notes and video soundtracks). It searches Hugging Face for models that Inference Providers currently serve, and has a **Test** button for each job.
 
 | Provider | Key | Default models |
 |---|---|---|
-| **Hugging Face** Inference Providers | Fine-grained token with "Make calls to Inference Providers" | `Qwen/Qwen3.8-27B` for synthesis and vision, `openai/whisper-large-v3-turbo` for speech. Any served chat or vision-language model works; append `:provider` (e.g. `:together`) to pin a provider. |
+| **Hugging Face** Inference Providers | Fine-grained token with "Make calls to Inference Providers" | `Qwen/Qwen3.8-27B` for synthesis, photos and video, `openai/whisper-large-v3-turbo` for speech. Any served chat or vision-language model works. Speech models (Whisper, Parakeet, Nemotron ASR, Qwen3-ASR, Cohere Transcribe…) are called on hf-inference, DeepInfra, Together or fal-ai. Append `:provider` (e.g. `:together`) to pin a provider. |
 | Anthropic | Anthropic API key | `claude-sonnet-5-5` |
 | OpenAI or any OpenAI-compatible endpoint | OpenAI key (base URL configurable per account) | `gpt-4o`, `whisper-1` |
 

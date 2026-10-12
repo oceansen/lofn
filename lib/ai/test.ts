@@ -1,6 +1,7 @@
 // Quick live checks so an account owner can confirm a provider/model works before a session.
 import { config } from "../config";
 import { makeChat, parseJsonLoose } from "./provider";
+import { hfTranscribe } from "./hf-asr";
 import { keyFor, type Task, type UserAi } from "./settings";
 
 /** 1 second of a 440 Hz tone as 16 kHz mono WAV (no speech: we only check the endpoint answers). */
@@ -31,7 +32,7 @@ export async function testModel(ai0: UserAi, task: Task, provider: string, model
     }
     const ai = makeChat(provider, model, ai0);
     if (!ai) return { ok: false, latencyMs: 0, error: "This provider can't be used for this task." };
-    if (task === "vision") {
+    if (task === "vision" || task === "video") {
       const out = await ai.complete({
         system: "Answer in one short sentence.",
         parts: [{ type: "text", text: "What colour is this square?" }, { type: "image", mime: "image/png", base64: await redSquare() }],
@@ -57,17 +58,7 @@ export async function testModel(ai0: UserAi, task: Task, provider: string, model
 // Transcription test that doesn't touch persisted settings.
 async function transcribeWith(ai: UserAi, provider: string, model: string) {
   const audio = toneWav();
-  if (provider === "huggingface") {
-    const res = await fetch(`${config.ai.hfInferenceUrl}/${model.split(":")[0]}`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${keyFor(ai, "huggingface")}`, "content-type": "application/json" },
-      body: JSON.stringify({ inputs: audio.toString("base64") }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`Transcription failed (${res.status}): ${text.slice(0, 300)}`);
-    return String(JSON.parse(text).text ?? "").trim();
-  }
+  if (provider === "huggingface") return (await hfTranscribe(keyFor(ai, "huggingface"), model, audio, "audio/wav", AbortSignal.timeout(120_000))).text;
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(audio)], { type: "audio/wav" }), "test.wav");
   form.append("model", model);

@@ -4,7 +4,7 @@ import { requireAdmin } from "@/lib/session";
 import { getUserAi } from "@/lib/ai/settings";
 import { testModel } from "@/lib/ai/test";
 
-const Schema = z.object({ task: z.enum(["synthesis", "vision", "transcription"]), provider: z.string(), model: z.string().max(200) });
+const Schema = z.object({ task: z.enum(["synthesis", "vision", "video", "transcription"]), provider: z.string(), model: z.string().max(200) });
 
 export const POST = route(async (req) => {
   const me = await requireAdmin();

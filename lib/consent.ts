@@ -49,6 +49,7 @@ export async function consentDocument(projectId: string): Promise<{ document: Co
     ai: {
       synthesis: name(st.synthesisProvider, st.synthesisModel),
       vision: name(st.visionProvider, st.visionModel),
+      video: name(st.videoProvider, st.videoModel),
       transcription: name(st.transcriptionProvider, st.transcriptionModel),
     },
   });

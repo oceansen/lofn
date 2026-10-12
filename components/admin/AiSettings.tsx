@@ -4,7 +4,7 @@ import useSWR from "swr";
 import { api, fetcher } from "@/lib/client/api";
 import { Button, Input, Notice, Pill, Spinner, cx } from "@/components/ui";
 
-type Task = "synthesis" | "vision" | "transcription";
+type Task = "synthesis" | "vision" | "video" | "transcription";
 type Setting = { provider: string; model: string };
 type Data = {
   settings: Record<Task, Setting>;
@@ -14,7 +14,7 @@ type Data = {
   defaults: Record<Task, Record<string, string>>;
   providers: { chat: string[]; asr: string[] };
 };
-type Model = { id: string; task: string; providers: string[]; structured: boolean; recommended: boolean; downloads: number; likes: number; vision: boolean };
+type Model = { id: string; task: string; providers: string[]; structured: boolean; recommended: boolean; downloads: number; likes: number; vision: boolean; video?: boolean };
 
 const LABEL: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", huggingface: "Hugging Face", none: "Off" };
 const KEY_HELP: Record<string, { hint: string; url: string; placeholder: string }> = {
@@ -24,8 +24,9 @@ const KEY_HELP: Record<string, { hint: string; url: string; placeholder: string 
 };
 const TASKS: { task: Task; title: string; help: string }[] = [
   { task: "synthesis", title: "Answer synthesis", help: "Weaves contributions into each group’s answer every minute, and writes the project-level synthesis. Choose a strong instruction-following model." },
-  { task: "vision", title: "Image and video interpretation", help: "Describes photos and video keyframes so they can be used as evidence. Needs a vision-language model." },
-  { task: "transcription", title: "Voice and video transcription", help: "Turns recorded speech into text. Whisper-family models work well." },
+  { task: "vision", title: "Photo interpretation", help: "Describes photos so they can be used as evidence. Needs a vision-language model." },
+  { task: "video", title: "Video interpretation", help: "Lofn extracts keyframes from each video and sends them together, in order, to this model, which describes what happens. The soundtrack goes to the transcription model below. Choose a vision-language model that handles several images at once (Qwen-VL, GLM-V, Gemma and similar)." },
+  { task: "transcription", title: "Voice and video transcription", help: "Turns recorded speech, and the soundtrack of videos, into text. Whisper, Parakeet, Qwen-ASR and similar speech models are listed from every provider Lofn can call." },
 ];
 
 export function AiSettingsForm() {
@@ -192,7 +193,8 @@ function HfModelPicker({ task, value, onChange }: { task: Task; value: string; o
         )}
       </div>
       <p className="mt-1 text-[13px] text-muted">
-        Append <code>:provider</code> (e.g. <code>:together</code>) to pin an inference provider{task === "transcription" ? "; transcription runs on HF Inference" : ", otherwise Hugging Face picks one"}.
+        Append <code>:provider</code> (e.g. <code>:together</code>) to pin an inference provider
+        {task === "transcription" ? " (hf-inference, deepinfra, together or fal-ai); otherwise Lofn picks the first one that serves the model" : ", otherwise Hugging Face picks one"}.
       </p>
       <div className="mt-3 rounded-[var(--radius-md)] border border-line">
         <div className="border-b border-line p-2">
@@ -211,9 +213,10 @@ function HfModelPicker({ task, value, onChange }: { task: Task; value: string; o
               >
                 <span className="font-mono text-[13.5px] font-semibold">{m.id}</span>
                 {m.vision && task === "synthesis" && <Pill tone="weave">vision</Pill>}
+                {m.video && <Pill tone="weave">video</Pill>}
                 {m.structured && task !== "transcription" && <Pill tone="spruce">JSON output</Pill>}
                 <span className="ml-auto text-[12.5px] text-muted">
-                  {m.providers.length} provider{m.providers.length === 1 ? "" : "s"}, {m.likes.toLocaleString()} likes
+                  {task === "transcription" ? m.providers.join(", ") : `${m.providers.length} provider${m.providers.length === 1 ? "" : "s"}`}, {m.likes.toLocaleString()} likes
                 </span>
               </button>
             </li>
@@ -225,7 +228,9 @@ function HfModelPicker({ task, value, onChange }: { task: Task; value: string; o
           </button>
         )}
       </div>
-      <p className="mt-1.5 text-[12.5px] text-muted">Recommended: served by several providers or with structured JSON output, which Lofn’s synthesis relies on.</p>
+      {task !== "transcription" && (
+        <p className="mt-1.5 text-[12.5px] text-muted">Recommended: served by several providers or with structured JSON output, which Lofn’s synthesis relies on.</p>
+      )}
     </div>
   );
 }
