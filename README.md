@@ -93,6 +93,21 @@ Tuning options: `SYNTHESIS_INTERVAL_SECONDS` (default 60) and `FINAL_SYNTHESIS_W
 - **Retention.** Each project can delete media N days after a cycle ends. **Settings → Delete all media now** purges immediately. Transcripts and descriptions are kept, so answers stay intact. Uploads that were never attached to a contribution are removed after a day.
 - **S3.** Set `STORAGE_DRIVER=s3`, `S3_BUCKET`, `S3_REGION` (and `S3_ENDPOINT`/`S3_FORCE_PATH_STYLE` for MinIO or R2), and the AWS credentials. Objects use SSE-AES256. They are served through short-lived signed URLs, issued only after authorisation.
 
+## Accounts
+
+- **Who can sign up.** Anyone can create an account with email and password, Google or GitHub, and each account sees only its own projects. Participants still need no account: they join a group with its code.
+- **Administrators.** The first account becomes the instance administrator, protected by `SETUP_CODE` on public servers. Administrators manage users and the AI models, which run on the server's keys. They can't open other people's projects.
+- **Sign-up policy.** Set it under **Users** to one of four modes:
+  - *Anyone can sign up*
+  - *Sign-ups need approval*
+  - *Only my organisation*: Google or GitHub sign-ups with a verified address on the allowed domains are instant, and email sign-ups wait for approval because their address can't be verified.
+  - *No new accounts*
+- **Google and GitHub sign-in** use the OAuth authorization-code flow with `state` and PKCE.
+  - They are enabled by setting `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and/or `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`.
+  - Register the callback URLs `<APP_URL>/api/auth/google/callback` and `<APP_URL>/api/auth/github/callback`; the **Users** page shows the exact values for your server.
+  - An identity with a verified email that matches an existing account is linked to that account.
+- **Disabled accounts** are signed out immediately.
+
 ## Security model
 
 - **Admin sessions.** Admins sign in with scrypt-hashed passwords. Sessions are random tokens, stored as SHA-256 hashes, in HttpOnly SameSite=Lax cookies. Logins are rate-limited.

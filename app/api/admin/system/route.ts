@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/session";
 import { one } from "@/lib/db";
 
 export const GET = route(async () => {
-  await requireAdmin();
+  const me = await requireAdmin();
   const q = await one(
     `SELECT count(*) FILTER (WHERE status='queued' AND run_at <= now())::int AS queued,
             count(*) FILTER (WHERE status='running')::int AS running,
@@ -13,5 +13,7 @@ export const GET = route(async () => {
             max(updated_at) FILTER (WHERE status='done') AS last_done
        FROM jobs`,
   );
+  // Queue and storage details are instance-wide, so only administrators see them.
+  if (me.role !== "admin") return json({ ai: await aiStatus(), synthesisIntervalSeconds: config.synthesis.intervalMs / 1000 });
   return json({ ai: await aiStatus(), storage: config.storage.driver, synthesisIntervalSeconds: config.synthesis.intervalMs / 1000, queue: q });
 });

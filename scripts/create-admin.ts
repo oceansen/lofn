@@ -15,8 +15,9 @@ async function main() {
   }
   await migrate();
   const r = await pool.query(
-    `INSERT INTO admins(email, name, password_hash) VALUES (lower($1), $2, $3)
-     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, name = COALESCE(NULLIF(EXCLUDED.name,''), admins.name)
+    `INSERT INTO admins(email, name, password_hash, role, status) VALUES (lower($1), $2, $3, 'admin', 'active')
+     ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role='admin', status='active',
+       name = COALESCE(NULLIF(EXCLUDED.name,''), admins.name)
      RETURNING id, email`,
     [email.trim(), name, hashPassword(password)],
   );

@@ -24,6 +24,8 @@ export function Dashboard() {
   const router = useRouter();
   const { data, mutate } = useSWR<{ projects: P[] }>("/api/admin/projects", fetcher, { refreshInterval: 10_000 });
   const { data: sys } = useSWR("/api/admin/system", fetcher, { refreshInterval: 30_000 });
+  const { data: me } = useSWR<{ admin: { role: string } }>("/api/admin/me", fetcher);
+  const isAdmin = me?.admin.role === "admin";
   const [showArchived, setShowArchived] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const projects = (data?.projects ?? []).filter((p) => showArchived || p.status === "active");
@@ -41,13 +43,13 @@ export function Dashboard() {
         </Button>
       </div>
 
-      {sys?.ai?.isFallback && (
+      {sys?.ai?.isFallback && isAdmin && (
         <Notice tone="tide" className="mt-6">
           <strong>AI synthesis is not configured.</strong> Answers will be clearly labelled development fallbacks that list contributions verbatim. Set{" "}
           <code>HF_TOKEN</code>, <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code>, then choose models under <a className="font-semibold underline" href="/admin/ai">AI models</a>.
         </Notice>
       )}
-      {sys && !sys.ai.isFallback && sys.ai.transcriptionFallback && (
+      {sys && isAdmin && !sys.ai.isFallback && sys.ai.transcriptionFallback && (
         <Notice className="mt-6 text-[14.5px]">
           Transcription is off, so recordings are stored but not transcribed. Turn it on under <a className="font-semibold underline" href="/admin/ai">AI models</a> (Hugging Face Whisper or OpenAI).
         </Notice>
@@ -129,7 +131,7 @@ export function Dashboard() {
           </button>
         )}
       </div>
-      {sys && (
+      {sys && isAdmin && (
         <p className="mt-10 text-[13px] text-muted">
           AI: {sys.ai.isFallback ? "development fallback" : `${sys.ai.synthesisProvider} (${sys.ai.synthesisModel})`}. Transcription:{" "}
           {sys.ai.transcriptionFallback ? "off" : `${sys.ai.transcriptionProvider} (${sys.ai.transcriptionModel})`}. Synthesis every {sys.synthesisIntervalSeconds}s. Queue: {sys.queue.queued} waiting,{" "}

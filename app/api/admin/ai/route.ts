@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { body, json, route, badRequest } from "@/lib/http";
-import { requireAdmin } from "@/lib/session";
+import { requireInstanceAdmin as requireAdmin } from "@/lib/session";
 import { ASR_PROVIDERS, CHAT_PROVIDERS, aiStatus, defaultModel, getAiSettings, hasKey, saveAiSettings } from "@/lib/ai/settings";
 
 const Task = z.object({ provider: z.string(), model: z.string().trim().max(200) });

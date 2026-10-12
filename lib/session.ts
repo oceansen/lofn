@@ -9,7 +9,7 @@ export const PARTICIPANT_COOKIE = "lofn_p";
 const ADMIN_TTL_DAYS = 14;
 const PARTICIPANT_TTL_DAYS = 30;
 
-export type Admin = { id: string; email: string; name: string };
+export type Admin = { id: string; email: string; name: string; role: "admin" | "member"; status: string; avatar_url: string };
 
 // Hugging Face shows Spaces inside an iframe on huggingface.co, which needs third-party cookies.
 const embedded = !!process.env.SPACE_ID;
@@ -26,6 +26,7 @@ function cookieOpts(days: number) {
 
 export async function createAdminSession(adminId: string) {
   const token = randomToken();
+  await query(`UPDATE admins SET last_login_at=now() WHERE id=$1`, [adminId]);
   await query(`INSERT INTO admin_sessions(token_hash, admin_id, expires_at) VALUES ($1,$2, now() + ($3 || ' days')::interval)`, [
     sha256(token),
     adminId,
@@ -45,15 +46,23 @@ export async function getAdmin(): Promise<Admin | null> {
   const token = (await cookies()).get(ADMIN_COOKIE)?.value;
   if (!token) return null;
   return one<Admin>(
-    `SELECT a.id, a.email, a.name FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
-     WHERE s.token_hash=$1 AND s.expires_at > now()`,
+    `SELECT a.id, a.email, a.name, a.role, a.status, a.avatar_url FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
+     WHERE s.token_hash=$1 AND s.expires_at > now() AND a.status = 'active'`,
     [sha256(token)],
   );
 }
 
+/** Any signed-in, active facilitator account. */
 export async function requireAdmin(): Promise<Admin> {
   const a = await getAdmin();
   if (!a) throw unauthorized();
+  return a;
+}
+
+/** Instance administrators manage users, sign-up rules and the (billed) AI models. */
+export async function requireInstanceAdmin(): Promise<Admin> {
+  const a = await requireAdmin();
+  if (a.role !== "admin") throw forbidden("Only this Lofn's administrators can do that.");
   return a;
 }
 
