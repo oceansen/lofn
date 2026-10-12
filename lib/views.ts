@@ -151,7 +151,10 @@ export async function projectOverview(projectId: string, cycleId?: string | null
     `SELECT g.id, g.name, g.access_code, g.code_active, g.created_at,
             COALESCE((SELECT array_agg(question_id) FROM group_questions WHERE group_id=g.id), '{}') AS question_ids,
             (SELECT count(*)::int FROM participants pa WHERE pa.group_id=g.id) AS participant_count,
-            (SELECT count(*)::int FROM participants pa WHERE pa.group_id=g.id AND pa.last_seen_at > now() - interval '2 minutes') AS active_count
+            (SELECT count(*)::int FROM participants pa WHERE pa.group_id=g.id AND pa.last_seen_at > now() - interval '2 minutes') AS active_count,
+            COALESCE((SELECT gc.enabled FROM group_context gc WHERE gc.group_id=g.id), false) AS context_enabled,
+            COALESCE((SELECT gc.active_hash <> '' FROM group_context gc WHERE gc.group_id=g.id), false) AS context_active,
+            (SELECT count(*)::int FROM group_context_files f WHERE f.group_id=g.id) AS context_files
        FROM groups g WHERE g.project_id=$1 ORDER BY g.created_at`,
     [projectId],
   );
@@ -191,6 +194,7 @@ export async function projectOverview(projectId: string, cycleId?: string | null
       questionIds: g.question_ids,
       participantCount: g.participant_count,
       activeCount: g.active_count,
+      context: { enabled: g.context_enabled, active: g.context_active, files: g.context_files },
     })),
     cycles,
     selectedCycleId: selected?.id ?? null,

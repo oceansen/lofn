@@ -111,6 +111,19 @@ After entering a group code, every participant reads the project's consent form 
 - **Proof.** The consent register records who signed, which version, which choices, and when they signed or withdrew. Facilitators can download it as CSV, along with the full text of every version.
 - **Participant rights.** Under "Consent and your data", participants can view and download what they signed, change the recordings consent, download all their data as JSON (access and portability), or withdraw. Withdrawing erases their text, media, transcripts and descriptions, rewrites the affected answers without them, and removes them from the group. Earlier answer versions and reports already shared may still contain wording derived from their contributions, and the form says so.
 
+## Group context
+
+Each group can add background material under **Group context** in its workspace: notes, and up to 10 files. Lofn reads PowerPoint, Word, Excel, PDF, text, Markdown, CSV and JSON files as text, and transcribes images (whiteboards, screenshots) with the owner's vision model. Files are read by the worker; the group sees "Reading…", then how many characters were read.
+
+When the group ticks **Use for our answers**, the synthesis reads the context alongside the contributions for every question:
+- Points taken from the context are marked [Context] and shown as a chip.
+- Contributions take precedence when they disagree with the context.
+- Questions with no contributions yet get a first draft written from the context alone.
+
+Changing or switching off the context revises the answers in the running round. Drafts that rested only on the context are cleared without an AI call.
+
+Facilitators see each group's context, and the exact text the AI reads, under **Groups → Context**, and can switch it off. The prompt is capped at `CONTEXT_MAX_CHARS` (default 40,000) and files at `CONTEXT_FILE_MB` (default 25). Context is included in project archives. A participant's uploads are removed when they erase their data or withdraw.
+
 ## Data export, import and erasure
 
 - **Facilitators: whole project.** Project → Settings → **Download project archive** produces one `.zip` (`lofn-project-archive/v1`). It holds `data.json` with every row that belongs to the project (questions and images, groups, rounds, participants, contributions, transcripts and descriptions, answers with all versions, project syntheses, consent versions and signatures) plus every stored media file. Import it under **New project** to restore it as a new project owned by you. All ids are remapped, groups get fresh access codes, running rounds come back as ended, and participant sessions can't be resumed, because session tokens are never exported. The archive streams through disk, so large media never sits in memory. `IMPORT_MAX_MB` sets the upload limit (default 2048).

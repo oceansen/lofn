@@ -9,6 +9,7 @@ import { ContributionCard, type ContributionView } from "@/components/Contributi
 import { Composer, type Limits } from "@/components/Composer";
 import { Button, LofnMark, Modal, Notice, Spinner, cx } from "@/components/ui";
 import { ConsentGate, YourDataModal } from "@/components/participant/Consent";
+import { GroupContextPanel } from "@/components/participant/GroupContext";
 
 type Workspace = {
   project: { id: string; name: string; description: string };
@@ -157,6 +158,8 @@ export function ParticipantWorkspace() {
             ))}
           </div>
         )}
+
+        <GroupContextPanel />
 
         {questions.length === 0 ? (
           <p className="mt-10 text-center text-muted">No questions have been assigned to your group yet.</p>

@@ -7,7 +7,7 @@ type RefRender = (n: number, kind: "C" | "G") => ReactNode;
 
 function inline(text: string, renderRef: RefRender, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[(C|G)(\d+)\]|(?<![\w*])[*_][^*_\n]+[*_](?![\w*]))/g;
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[(C|G)(\d+)\]|\[Context\]|(?<![\w*])[*_][^*_\n]+[*_](?![\w*]))/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
@@ -16,6 +16,12 @@ function inline(text: string, renderRef: RefRender, keyBase: string): ReactNode[
     const tok = m[0];
     const key = `${keyBase}-${i++}`;
     if (m[2]) out.push(<Fragment key={key}>{renderRef(Number(m[3]), m[2] as "C" | "G")}</Fragment>);
+    else if (tok === "[Context]")
+      out.push(
+        <span key={key} title="From the group's context" className="mx-0.5 inline-flex translate-y-[-1px] items-center rounded-full border border-weave/30 bg-weave/8 px-1.5 text-[0.72em] font-semibold tracking-wide text-weave uppercase">
+          Context
+        </span>,
+      );
     else if (tok.startsWith("**")) out.push(<strong key={key}>{inline(tok.slice(2, -2), renderRef, key)}</strong>);
     else if (tok.startsWith("`")) out.push(<code key={key} className="rounded bg-ink/6 px-1 text-[0.92em]">{tok.slice(1, -1)}</code>);
     else out.push(<em key={key}>{tok.slice(1, -1)}</em>);

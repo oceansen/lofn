@@ -64,7 +64,7 @@ export function buildConsent(s: ConsentSettings, ctx: ConsentContext): ConsentDo
     {
       heading: "What is collected",
       paragraphs: [
-        "What you choose to send: text, voice recordings, photos and videos, and the name you entered (optional).",
+        "What you choose to send: text, voice recordings, photos and videos, files and notes you add to your group’s shared context, and the name you entered (optional).",
         "What Lofn derives from it: transcripts of speech and written descriptions of photos and video frames.",
         "Technical data needed to run the session: a random session cookie, your group, an anonymous label (such as P4) and when you contributed. Your IP address is not stored with your contributions.",
         s.healthData

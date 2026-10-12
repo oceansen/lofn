@@ -5,6 +5,8 @@ import { forbidden, ApiError } from "./http";
 import { aiForProject, statusOf } from "./ai/settings";
 import { buildConsent, consentToText, DEFAULT_SETTINGS, type ConsentDocument, type ConsentSettings } from "./consent-text";
 import { deleteMediaRows } from "./retention";
+import { storage } from "./storage";
+import { refreshContext } from "./group-context";
 import { enqueue } from "./jobs";
 import { publish } from "./events";
 import type { ParticipantCtx } from "./session";
@@ -144,6 +146,12 @@ export async function eraseContributions(participantId: string, onlyIds?: string
              OR EXISTS (SELECT 1 FROM derivations d WHERE d.contribution_id=c.id))`,
     onlyIds ? [participantId, onlyIds] : [participantId],
   );
+  // Erasing everything also removes the context files this participant uploaded for the group.
+  if (!onlyIds) {
+    const files = await query(`DELETE FROM group_context_files WHERE participant_id=$1 RETURNING storage_key, group_id, project_id`, [participantId]);
+    for (const f of files) await storage().delete(f.storage_key).catch(() => {});
+    for (const g of new Map(files.map((f) => [f.group_id, f.project_id]))) await refreshContext(g[0], g[1]);
+  }
   if (!contribs.length) return { erased: 0, contribs };
   const ids = contribs.map((c) => c.id);
   const media = await query(`SELECT id, storage_key FROM media WHERE contribution_id = ANY($1::uuid[]) AND deleted_at IS NULL`, [ids]);
@@ -214,6 +222,9 @@ export async function participantData(ctx: ParticipantCtx) {
     group: ctx.group.name,
     you: { label: ctx.participant.alias, name: ctx.participant.display_name || null },
     consent,
+    contextFiles: (
+      await query(`SELECT name, mime, size_bytes, status, created_at FROM group_context_files WHERE participant_id=$1 ORDER BY created_at`, [ctx.participant.id])
+    ).map((f) => ({ name: f.name, mime: f.mime, bytes: Number(f.size_bytes), status: f.status, uploadedAt: f.created_at })),
     contributions: contributions.map((c) => ({
       ref: `C${c.ref_no}`,
       questionId: c.question_id,

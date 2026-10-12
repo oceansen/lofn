@@ -1,7 +1,7 @@
 import { pool, type Queryable } from "./db";
 
 export type LofnEvent = {
-  t: "cycle" | "contribution" | "answer" | "project_synthesis" | "project";
+  t: "cycle" | "contribution" | "answer" | "project_synthesis" | "project" | "context";
   projectId: string;
   groupId?: string;
   cycleId?: string;

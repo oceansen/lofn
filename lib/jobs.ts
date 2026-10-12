@@ -1,6 +1,7 @@
 import { pool, query, one, type Queryable } from "./db";
 
 export type JobType =
+  | "process_context_file"
   | "process_contribution"
   | "synthesize"
   | "finalize_check"

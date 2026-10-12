@@ -32,6 +32,8 @@ const SPECS: Spec[] = [
   { table: "answer_versions", select: `SELECT v.* FROM answer_versions v JOIN answers a ON a.id=v.answer_id WHERE a.project_id=$1`, refs: [R("id"), R("answer_id")] },
   { table: "answer_contributions", select: `SELECT ac.* FROM answer_contributions ac JOIN answers a ON a.id=ac.answer_id WHERE a.project_id=$1`, refs: [R("answer_id"), R("contribution_id")] },
   { table: "project_syntheses", select: `SELECT * FROM project_syntheses WHERE project_id=$1`, refs: [R("id"), R("project_id"), R("cycle_id", false)] },
+  { table: "group_context", select: `SELECT gc.* FROM group_context gc JOIN groups g ON g.id=gc.group_id WHERE g.project_id=$1`, refs: [R("group_id"), R("updated_by", false)] },
+  { table: "group_context_files", select: `SELECT * FROM group_context_files WHERE project_id=$1`, refs: [R("id"), R("project_id"), R("group_id"), R("participant_id", false)] },
   { table: "project_consent", select: `SELECT * FROM project_consent WHERE project_id=$1`, refs: [R("project_id")] },
   { table: "consent_versions", select: `SELECT * FROM consent_versions WHERE project_id=$1`, refs: [R("id"), R("project_id")] },
   { table: "participant_consents", select: `SELECT * FROM participant_consents WHERE project_id=$1`, refs: [R("id"), R("project_id"), R("group_id", false), R("participant_id", false), R("consent_version_id")] },
@@ -76,6 +78,7 @@ export async function exportProjectArchive(projectId: string) {
         `Restore it in Lofn: Projects → New project → Import a project file.\n`,
     };
     for (const m of media) yield { name: `media/${m.id}`, compress: false, stream: () => storage().stream(m.storage_key) };
+    for (const f of tables.group_context_files) yield { name: `context/${f.id}`, compress: true, stream: () => storage().stream(f.storage_key) };
   }
   await writeZip(tmp, entries());
   return { path: tmp, name: project.name as string };
@@ -88,7 +91,7 @@ export async function importProjectArchive(ownerId: string, zipPath: string) {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "lofn-restore-"));
   const stored: { key: string }[] = [];
   try {
-    const files = await extractZip(zipPath, dir, (n) => n === "data.json" || /^media\/[0-9a-f-]{36}$/.test(n), {
+    const files = await extractZip(zipPath, dir, (n) => n === "data.json" || /^(media|context)\/[0-9a-f-]{36}$/.test(n), {
       totalBytes: Number(process.env.IMPORT_MAX_MB || 2048) * 1048576 * 2,
       entries: 50_000,
     });
@@ -155,6 +158,12 @@ export async function importProjectArchive(ownerId: string, zipPath: string) {
           if (s.table === "answers") Object.assign(row, { status: "idle", lease_token: null, lease_until: null });
           if (s.table === "project_syntheses" && (row.status === "running" || row.status === "queued")) Object.assign(row, { status: "error", error: "Interrupted by export." });
           if (s.table === "contributions" && (row.status === "pending" || row.status === "processing")) row.status = "failed", row.processing_error = "Not processed before export.";
+          if (s.table === "group_context_files") {
+            const file = files.get(`context/${raw.id}`);
+            row.storage_key = `projects/${projectId}/groups/${row.group_id}/context/${row.id}`;
+            if (file) mediaToStore.push({ id: row.id, old: raw.id, key: row.storage_key, mime: row.mime, category: "context" as any, path: `context/${raw.id}` } as any);
+            else Object.assign(row, { status: "failed", error: "File missing from the archive." });
+          }
           if (s.table === "media") {
             const file = files.get(`media/${raw.id}`);
             const cat = row.category as MediaCategory;
@@ -181,7 +190,7 @@ export async function importProjectArchive(ownerId: string, zipPath: string) {
       }
       // Media files go into storage inside the transaction window, so a failure rolls everything back.
       for (const m of mediaToStore) {
-        const f = files.get(`media/${m.old}`)!;
+        const f = files.get((m as any).path ?? `media/${m.old}`)!;
         await storage().putFile(m.key, f.path, m.mime);
         stored.push({ key: m.key });
       }

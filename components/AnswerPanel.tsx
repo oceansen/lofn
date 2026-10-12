@@ -146,6 +146,7 @@ export function AnswerPanel({
             <span>Updated {timeAgo(answer.versionCreatedAt, now)}</span>
             <span>
               Built from {answer.includedCount} contribution{answer.includedCount === 1 ? "" : "s"}
+              {/\[Context\]/.test(answer.content?.answer ?? "") ? " and the group’s context" : ""}
             </span>
           </>
         ) : (

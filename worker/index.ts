@@ -10,6 +10,7 @@ import { claim, complete, enqueue, fail, reapStale, reschedule, type Job } from 
 import { expireDueCycles, rearmPendingFinals } from "../lib/cycles";
 import { publish } from "../lib/events";
 import { answersNeedingSynthesis, synthesizeAnswer } from "../lib/synthesis";
+import { ensureContextAnswers, processContextFile } from "../lib/group-context";
 import { processContribution, hasFfmpeg, hasFfprobe, ffmpegPaths } from "../lib/media-processing";
 import { runProjectSynthesis } from "../lib/project-synthesis";
 import { purgeProjectMedia, retentionSweep } from "../lib/retention";
@@ -28,6 +29,9 @@ async function handle(job: Job) {
   switch (job.type) {
     case "process_contribution":
       return processContribution(job.payload.contributionId, job.attempts, job.max_attempts);
+
+    case "process_context_file":
+      return processContextFile(job.payload.fileId);
 
     case "synthesize": {
       const r = await synthesizeAnswer(job.payload.answerId, job.payload.trigger ?? "tick", job.created_at);
@@ -110,6 +114,7 @@ async function clock() {
         [String(config.synthesis.intervalMs)],
       );
       for (const c of due) {
+        await ensureContextAnswers(c.project_id);
         const ids = await answersNeedingSynthesis(c.id);
         for (const id of ids) {
           await query(`UPDATE answers SET status='queued' WHERE id=$1 AND status IN ('idle','error')`, [id]);

@@ -6,7 +6,7 @@ import QRCode from "qrcode";
 import { api, fetcher, HttpError } from "@/lib/client/api";
 import { Button, Empty, Field, Input, Modal, Pill, Spinner, Textarea, cx } from "@/components/ui";
 
-type G = { id: string; name: string; accessCode: string; codeActive: boolean; questionIds: string[]; participantCount: number; activeCount: number };
+type G = { id: string; name: string; accessCode: string; codeActive: boolean; questionIds: string[]; participantCount: number; activeCount: number; context: { enabled: boolean; active: boolean; files: number } };
 type Q = { id: string; title: string };
 
 function useQr(text: string) {
@@ -27,6 +27,7 @@ export default function GroupsPage({ params }: { params: Promise<{ id: string }>
   const { id } = use(params);
   const key = `/api/admin/projects/${id}/groups`;
   const { data, mutate } = useSWR<{ groups: G[]; questions: Q[] }>(key, fetcher);
+  const [ctxGroup, setCtxGroup] = useState<G | null>(null);
   const [names, setNames] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +91,7 @@ export default function GroupsPage({ params }: { params: Promise<{ id: string }>
                   <span className="text-[13.5px] text-muted">
                     {g.participantCount} joined{g.activeCount ? `, ${g.activeCount} active now` : ""}
                   </span>
+                  {g.context.active ? <Pill tone="weave">Context on</Pill> : g.context.files || g.context.enabled ? <Pill>Context off</Pill> : null}
                   <span className="ml-auto flex items-center gap-2">
                     <button
                       onClick={() => navigator.clipboard?.writeText(g.accessCode)}
@@ -127,6 +129,9 @@ export default function GroupsPage({ params }: { params: Promise<{ id: string }>
                     }
                   >
                     New code
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setCtxGroup(g)}>
+                    Context
                   </Button>
                   <Button size="sm" variant="danger" className="ml-auto" onClick={() => del(g)}>
                     Delete
@@ -199,6 +204,7 @@ export default function GroupsPage({ params }: { params: Promise<{ id: string }>
         )}
       </section>
 
+      <ContextModal g={ctxGroup} onClose={() => setCtxGroup(null)} onChanged={() => mutate()} />
       <Modal open={!!qr} onClose={() => setQr(null)} title={qr ? `Join ${qr.name}` : ""}>
         {qr && (
           <div className="text-center">
@@ -275,5 +281,80 @@ function GroupName({ g, onSave }: { g: G; onSave: (n: string) => void }) {
         Save
       </Button>
     </form>
+  );
+}
+
+type Ctx = {
+  enabled: boolean; text: string; active: boolean; truncated: boolean; composed: string; updatedAt: string | null;
+  files: { id: string; name: string; size: number; status: string; error: string | null; chars: number }[];
+};
+
+function ContextModal({ g, onClose, onChanged }: { g: G | null; onClose: () => void; onChanged: () => void }) {
+  const { data, mutate } = useSWR<Ctx>(g ? `/api/admin/groups/${g.id}/context` : null, fetcher);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal open={!!g} onClose={onClose} title={g ? `${g.name}: context` : ""} wide>
+      {!data ? (
+        <Spinner className="size-6 text-spruce" />
+      ) : (
+        <div className="space-y-4 text-[15px]">
+          <p className="text-muted">
+            The group adds this background material and decides whether its answers use it. You can switch it off, for example if it isn’t
+            appropriate for the session.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            {data.active ? <Pill tone="weave">Answers use it</Pill> : <Pill>{data.enabled ? "On, but empty" : "Off"}</Pill>}
+            <Button
+              size="sm"
+              busy={busy}
+              onClick={async () => {
+                setBusy(true);
+                await mutate(await api(`/api/admin/groups/${g!.id}/context`, { method: "PATCH", body: { enabled: !data.enabled } }), false).catch(() => {});
+                await mutate();
+                onChanged();
+                setBusy(false);
+              }}
+            >
+              {data.enabled ? "Switch off" : "Switch on"}
+            </Button>
+          </div>
+          <div>
+            <h3 className="font-semibold">Files</h3>
+            {data.files.length === 0 ? (
+              <p className="text-muted">None.</p>
+            ) : (
+              <ul className="mt-1 space-y-1">
+                {data.files.map((f) => (
+                  <li key={f.id} className="flex flex-wrap items-center gap-2">
+                    <a className="font-semibold text-spruce hover:underline" href={`/api/admin/groups/${g!.id}/context/files/${f.id}`}>{f.name}</a>
+                    <span className="text-[13px] text-muted">{f.status === "ready" ? `${f.chars.toLocaleString()} characters` : f.status === "failed" ? f.error : "reading…"}</span>
+                    <button
+                      className="text-[13px] font-semibold text-muted hover:text-alarm"
+                      onClick={async () => {
+                        await api(`/api/admin/groups/${g!.id}/context/files/${f.id}`, { method: "DELETE" });
+                        await mutate();
+                        onChanged();
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div>
+            <h3 className="font-semibold">Notes</h3>
+            <p className="mt-1 whitespace-pre-wrap text-ink/90">{data.text || <span className="text-muted">None.</span>}</p>
+          </div>
+          {data.composed && (
+            <details className="rounded-[var(--radius-md)] border border-line p-3">
+              <summary className="cursor-pointer font-semibold">What the AI reads ({data.composed.length.toLocaleString()} characters{data.truncated ? ", shortened" : ""})</summary>
+              <pre className="mt-2 max-h-80 overflow-y-auto font-sans text-[13.5px] whitespace-pre-wrap">{data.composed}</pre>
+            </details>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
