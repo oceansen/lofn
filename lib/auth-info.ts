@@ -7,7 +7,6 @@ export async function authInfo() {
   return {
     providers: enabledProviders(),
     firstRun: first,
-    needsCode: first && !!process.env.SETUP_CODE,
     signup: first ? "open" : p.mode,
     domains: p.mode === "domains" ? p.domains : [],
   };

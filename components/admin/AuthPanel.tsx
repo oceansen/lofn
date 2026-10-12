@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/client/api";
 import { Button, Field, Input, Notice } from "@/components/ui";
 
-type Info = { providers: { google: boolean; github: boolean }; firstRun: boolean; needsCode: boolean; signup: string; domains: string[] };
+type Info = { providers: { google: boolean; github: boolean }; firstRun: boolean; signup: string; domains: string[] };
 
 function ProviderButtons({ info, verb }: { info: Info; verb: string }) {
   if (!info.providers.google && !info.providers.github) return null;
@@ -85,7 +85,7 @@ export function SignInPanel({ info, error, notice }: { info: Info; error?: strin
 
 export function SignUpPanel({ info }: { info: Info }) {
   const router = useRouter();
-  const [v, setV] = useState({ name: "", email: "", password: "", setupCode: "" });
+  const [v, setV] = useState({ name: "", email: "", password: "" });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(false);
@@ -127,11 +127,6 @@ export function SignUpPanel({ info }: { info: Info }) {
           }
         }}
       >
-        {info.needsCode && (
-          <Field label="Setup code" htmlFor="setupCode" hint="Set as SETUP_CODE on the server, so nobody else can claim this installation first.">
-            <Input id="setupCode" value={v.setupCode} onChange={(e) => setV({ ...v, setupCode: e.target.value })} autoComplete="off" required />
-          </Field>
-        )}
         <Field label="Your name" htmlFor="name">
           <Input id="name" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} autoComplete="name" />
         </Field>

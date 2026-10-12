@@ -98,7 +98,8 @@ Tuning options: `SYNTHESIS_INTERVAL_SECONDS` (default 60) and `FINAL_SYNTHESIS_W
 ## Accounts
 
 - **Who can sign up.** Anyone can create an account with email and password, Google or GitHub, and each account sees only its own projects. Participants still need no account: they join a group with its code.
-- **Administrators.** The first account becomes the instance administrator, protected by `SETUP_CODE` on public servers. Administrators manage users and the AI models, which run on the server's keys. They can't open other people's projects.
+- **Administrators.** The first account to sign up becomes the instance administrator. Administrators manage users and the sign-up policy. They can't open other people's projects, and like everyone else they use their own AI key.
+- **Participants** never create accounts: they join a group with its access code on the home page.
 - **Sign-up policy.** Set it under **Users** to one of four modes:
   - *Anyone can sign up*
   - *Sign-ups need approval*
